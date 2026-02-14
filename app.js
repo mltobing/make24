@@ -402,8 +402,13 @@ async function verifyOtpCode() {
     if (error) {
         status.textContent = error.message;
         status.className = 'sync-status error';
+    } else {
+        // Show immediate success feedback (onAuthStateChange will finish the rest)
+        status.textContent = 'Signed in! Syncing your data...';
+        status.className = 'sync-status success';
+        // Force UI update in case onAuthStateChange is delayed
+        await updateSyncUI();
     }
-    // Success is handled by onAuthStateChange listener
 }
 
 async function promptSignOut() {
@@ -549,6 +554,13 @@ async function syncHistoryFromSupabase() {
             }
         }
         if (merged > 0) {
+            // Update lastPlayedDate to the highest completed puzzle
+            for (const row of rows) {
+                const num = row.puzzle_num;
+                if (num > (gameState.lastPlayedDate || 0)) {
+                    gameState.lastPlayedDate = num;
+                }
+            }
             saveState();
             console.log(`History sync: merged ${merged} solves from server`);
         }
@@ -578,9 +590,22 @@ function reconcileStreakFromHistory() {
     const computed = computeStreakFromHistory();
     if (computed > gameState.streak) {
         gameState.streak = computed;
-        saveState();
-        updateStreakDisplay();
     }
+    // Keep lastPlayedDate in sync with history so updateStreak() doesn't reset
+    const today = getTodayPuzzleNumber();
+    if (gameState.history[today]?.completed) {
+        gameState.lastPlayedDate = today;
+    } else {
+        // Find the most recent completed puzzle
+        for (let num = today; num >= 1; num--) {
+            if (gameState.history[num]?.completed) {
+                gameState.lastPlayedDate = num;
+                break;
+            }
+        }
+    }
+    saveState();
+    updateStreakDisplay();
 }
 
 // ============================================================
@@ -1578,8 +1603,8 @@ async function boot() {
 
     await syncFromSupabase();
     await syncHistoryFromSupabase();
-    reconcileStreakFromHistory();
     updateStreak();
+    reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
 }
 
