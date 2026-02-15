@@ -403,11 +403,20 @@ async function verifyOtpCode() {
         status.textContent = error.message;
         status.className = 'sync-status error';
     } else {
-        // Show immediate success feedback (onAuthStateChange will finish the rest)
         status.textContent = 'Signed in! Syncing your data...';
         status.className = 'sync-status success';
-        // Force UI update in case onAuthStateChange is delayed
+        // Drive the full sync explicitly — don't rely solely on onAuthStateChange
         await updateSyncUI();
+        await ensureCanonicalDeviceId();
+        await syncFromSupabase();
+        await syncHistoryFromSupabase();
+        updateStreak();
+        reconcileStreakFromHistory();
+        // Re-init today's puzzle with synced state
+        const today = getTodayPuzzleNumber();
+        if (!currentPuzzle.isArchive && currentPuzzle.puzzleNum === today) {
+            initPuzzle(today, false);
+        }
     }
 }
 
@@ -456,6 +465,16 @@ function nudgeOpenSignIn() {
     }, ARCHIVE_WIN_MODAL_DELAY_MS);
 }
 
+async function getAuthHeaders() {
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token || SUPABASE_KEY;
+    return {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${token}`
+    };
+}
+
 async function ensureCanonicalDeviceId() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return;
@@ -474,13 +493,10 @@ async function ensureCanonicalDeviceId() {
 
 async function syncFromSupabase() {
     try {
+        const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_player`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            },
+            headers,
             body: JSON.stringify({ p_device_id: gameState.deviceId })
         });
         if (!response.ok) {
@@ -505,14 +521,10 @@ async function syncFromSupabase() {
 
 async function syncHistoryFromSupabase() {
     try {
+        const headers = await getAuthHeaders();
         // Step 1: Get player_id from device_id
         const playerUrl = `${SUPABASE_URL}/rest/v1/players?device_id=eq.${encodeURIComponent(gameState.deviceId)}&select=id&limit=1`;
-        const playerRes = await fetch(playerUrl, {
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            }
-        });
+        const playerRes = await fetch(playerUrl, { headers });
         if (!playerRes.ok) {
             showSyncError('Could not sync history — server returned an error.');
             return;
@@ -523,12 +535,7 @@ async function syncHistoryFromSupabase() {
 
         // Step 2: Get all solved puzzles from daily_results
         const url = `${SUPABASE_URL}/rest/v1/daily_results?player_id=eq.${playerId}&solved=eq.true&select=puzzle_num,moves,solve_time_seconds,operators,undos,is_perfect,is_fast&order=puzzle_num.desc&limit=500`;
-        const response = await fetch(url, {
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            }
-        });
+        const response = await fetch(url, { headers });
         if (!response.ok) {
             showSyncError('Could not sync history — server returned an error.');
             return;
@@ -553,15 +560,15 @@ async function syncHistoryFromSupabase() {
                 merged++;
             }
         }
-        if (merged > 0) {
-            // Update lastPlayedDate to the highest completed puzzle
-            for (const row of rows) {
-                const num = row.puzzle_num;
-                if (num > (gameState.lastPlayedDate || 0)) {
-                    gameState.lastPlayedDate = num;
-                }
+        // Always update lastPlayedDate to the highest completed puzzle from server
+        for (const row of rows) {
+            const num = row.puzzle_num;
+            if (num > (gameState.lastPlayedDate || 0)) {
+                gameState.lastPlayedDate = num;
             }
-            saveState();
+        }
+        saveState();
+        if (merged > 0) {
             console.log(`History sync: merged ${merged} solves from server`);
         }
     } catch (e) {
@@ -617,8 +624,8 @@ sb.auth.onAuthStateChange(async (_event, session) => {
         await ensureCanonicalDeviceId();
         await syncFromSupabase();
         await syncHistoryFromSupabase();
+        updateStreak();
         reconcileStreakFromHistory();
-        updateStreakDisplay();
         // Re-init today's puzzle if state changed after sync
         const today = getTodayPuzzleNumber();
         if (!currentPuzzle.isArchive && currentPuzzle.puzzleNum === today) {
@@ -1419,13 +1426,10 @@ async function trackPlay(success) {
             p_undos: playState.undoCount
         };
 
+        const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_solve`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            },
+            headers,
             body: JSON.stringify(payload)
         });
 
@@ -1448,13 +1452,10 @@ async function trackPlay(success) {
 
 async function syncStreakToSupabase() {
     try {
+        const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_player_streak`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            },
+            headers,
             body: JSON.stringify({
                 p_device_id: gameState.deviceId,
                 p_new_streak: gameState.streak,
