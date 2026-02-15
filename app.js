@@ -618,7 +618,12 @@ function reconcileStreakFromHistory() {
 // ============================================================
 // AUTH STATE CHANGE — re-init puzzle after sync (fixes reload bug)
 // ============================================================
+let bootComplete = false;
+
 sb.auth.onAuthStateChange(async (_event, session) => {
+    // During boot, boot() handles the full sync itself.
+    // Only act on auth changes that happen AFTER boot (e.g. sign-in, sign-out).
+    if (!bootComplete) return;
     await updateSyncUI();
     if (session) {
         await ensureCanonicalDeviceId();
@@ -1595,9 +1600,12 @@ document.getElementById('archiveModal').addEventListener('click', (e) => {
 // ============================================================
 async function boot() {
     loadState();
+
+    // Wait for the Supabase auth state to be fully resolved before rendering.
+    // getSession() restores any persisted session from storage.
+    const { data: { session } } = await sb.auth.getSession();
     await updateSyncUI();
 
-    const { data: { session } } = await sb.auth.getSession();
     if (session) {
         await ensureCanonicalDeviceId();
     }
@@ -1607,6 +1615,9 @@ async function boot() {
     updateStreak();
     reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
+
+    // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
+    bootComplete = true;
 }
 
 boot();
