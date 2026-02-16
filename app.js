@@ -1854,11 +1854,10 @@ let replayState = {
     cards: []   // current card state: [{value, slot, used}]
 };
 
-const REPLAY_STEP_MS = 1400;
+const REPLAY_STEP_MS = 1500;
 const REPLAY_HIGHLIGHT_MS = 400;
 const REPLAY_OP_MS = 350;
 const REPLAY_MERGE_MS = 450;
-const REPLAY_UNDO_MS = 1000;  // shorter timing for undo steps
 
 function startReplay(puzzleNum) {
     const history = gameState.history[puzzleNum];
@@ -1940,10 +1939,7 @@ function replayAutoStep() {
     if (replayState.currentStep >= replayState.steps.length - 1) {
         // Replay complete — wait for last animation, then show victory
         replayState.playing = false;
-        const lastStep = replayState.steps[replayState.steps.length - 1];
-        const lastStepAnimTime = lastStep?.type === 'undo'
-            ? 300
-            : REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS + 300;
+        const lastStepAnimTime = REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS + 300;
         setTimeout(() => {
             closeReplay();
             showConfetti();
@@ -1951,10 +1947,6 @@ function replayAutoStep() {
         }, lastStepAnimTime);
         return;
     }
-
-    // Determine delay based on next step type
-    const nextStep = replayState.steps[replayState.currentStep + 1];
-    const delay = nextStep?.type === 'undo' ? REPLAY_UNDO_MS : REPLAY_STEP_MS;
 
     replayState.timer = setTimeout(() => {
         replayStepForward();
@@ -2048,10 +2040,10 @@ function replayMergeStep(step) {
 function replayUndoStep(step) {
     const opSymbols = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
 
-    // Briefly flash the operator that's being undone
+    // Flash the operator in orange to signal undo
     const opDisplay = document.getElementById('replayOpDisplay');
     opDisplay.textContent = opSymbols[step.op] || step.op;
-    opDisplay.classList.add('visible');
+    opDisplay.classList.add('visible', 'undo');
 
     // Add puff/smoke to the result card that will disappear
     const resultSlot = document.getElementById(`rslot${step.result.slot}`);
@@ -2060,7 +2052,7 @@ function replayUndoStep(step) {
 
     // After puff animation: reverse the merge state and show restored cards
     setTimeout(() => {
-        opDisplay.classList.remove('visible');
+        opDisplay.classList.remove('visible', 'undo');
 
         // Remove the result card from state
         const resultIdx = replayState.cards.findIndex(c =>

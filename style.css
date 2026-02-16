@@ -1179,6 +1179,7 @@ body {
     transition: opacity 0.2s;
 }
 .replay-op-display.visible { opacity: 1; }
+.replay-op-display.undo { color: #f97316; }
 
 .replay-top-bar {
     position: fixed;
