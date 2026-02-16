@@ -22,16 +22,25 @@
         <div class="header-right">
             <button class="hint-btn" id="hintBtn" title="Get a hint" aria-label="Get a hint">💡</button>
             <button class="undo-btn" id="undoBtn" title="Undo" aria-label="Undo last move">↶</button>
-            <div class="streak-display">
+            <div class="streak-display" id="streakDisplay">
                 <span class="fire" aria-hidden="true">🔥</span>
                 <span id="streakCount" aria-label="Current streak">0</span>
                 <span class="freeze-indicator" id="freezeIndicator" aria-label="Streak freezes"></span>
             </div>
-            <button class="calendar-btn" id="calendarBtn" title="History" aria-label="Open history calendar">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <button class="more-btn" id="moreBtn" title="More" aria-label="More options">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
             </button>
-            <button class="calendar-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+        </div>
+
+        <!-- More menu dropdown -->
+        <div class="more-menu" id="moreMenu">
+            <button class="more-menu-item" id="menuCalendarBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                History
+            </button>
+            <button class="more-menu-item" id="menuSettingsBtn">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Settings
             </button>
         </div>
     </div>
@@ -184,6 +193,18 @@
     </div>
 
     <div class="sync-error-toast" id="syncErrorToast"></div>
+
+    <!-- Clipboard toast -->
+    <div class="clipboard-toast" id="clipboardToast">Copied to clipboard!</div>
+
+    <!-- Freeze tooltip -->
+    <div class="freeze-tooltip" id="freezeTooltip">Miss one day? A freeze auto-protects your streak. Earn one every 7-day streak.</div>
+
+    <!-- First-run helper -->
+    <div class="first-run-hint" id="firstRunHint">
+        Tap 2 numbers, then an operator until you reach 24
+        <button class="first-run-dismiss" id="firstRunDismiss" aria-label="Dismiss">Got it</button>
+    </div>
 
     <div class="confetti-container" id="confetti"></div>
     <canvas class="share-canvas" id="shareCanvas"></canvas>
