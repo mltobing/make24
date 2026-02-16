@@ -251,6 +251,33 @@ describe('solutionSteps serialization', () => {
     });
 });
 
+describe('solve24Full', () => {
+    test('returns 3 steps for [1, 2, 3, 4]', () => {
+        const steps = game.solve24Full([1, 2, 3, 4]);
+        expect(steps).not.toBeNull();
+        expect(steps.length).toBe(3);
+        // Verify each step has correct shape
+        for (const step of steps) {
+            expect(step).toHaveProperty('a');
+            expect(step).toHaveProperty('op');
+            expect(step).toHaveProperty('b');
+            expect(step).toHaveProperty('result');
+            expect(step.a).toHaveProperty('value');
+            expect(step.a).toHaveProperty('slot');
+        }
+    });
+    test('final result is 24', () => {
+        const steps = game.solve24Full([1, 2, 3, 4]);
+        const lastStep = steps[steps.length - 1];
+        expect(Math.abs(lastStep.result.value - 24)).toBeLessThan(0.001);
+    });
+    test('solves [8, 3, 8, 3]', () => {
+        const steps = game.solve24Full([8, 3, 8, 3]);
+        expect(steps).not.toBeNull();
+        expect(steps.length).toBe(3);
+    });
+});
+
 describe('named constants', () => {
     test('TARGET_NUMBER is 24', () => {
         expect(game.TARGET_NUMBER).toBe(24);
