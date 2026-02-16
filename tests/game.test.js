@@ -198,6 +198,59 @@ describe('every puzzle in VALID_PUZZLES is solvable', () => {
     });
 });
 
+describe('formatPuzzleDate', () => {
+    test('returns "Today" for today\'s puzzle', () => {
+        const today = game.getPuzzleNumber(new Date(Date.UTC(
+            new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()
+        )));
+        expect(game.formatPuzzleDate(today)).toBe('Today');
+    });
+    test('returns "Yesterday" for yesterday\'s puzzle', () => {
+        const today = game.getPuzzleNumber(new Date(Date.UTC(
+            new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()
+        )));
+        expect(game.formatPuzzleDate(today - 1)).toBe('Yesterday');
+    });
+    test('returns "Jan 1" for puzzle 1 (epoch)', () => {
+        expect(game.formatPuzzleDate(1)).toBe('Jan 1');
+    });
+});
+
+describe('formatPuzzleDateLong', () => {
+    test('returns full date for puzzle 1', () => {
+        expect(game.formatPuzzleDateLong(1)).toBe('January 1, 2025');
+    });
+});
+
+describe('formatTimeHuman', () => {
+    test('formats seconds under a minute', () => {
+        expect(game.formatTimeHuman(33)).toBe('33s');
+    });
+    test('formats exactly one minute', () => {
+        expect(game.formatTimeHuman(60)).toBe('1m');
+    });
+    test('formats minutes and seconds', () => {
+        expect(game.formatTimeHuman(95)).toBe('1m 35s');
+    });
+    test('returns -- for zero or null', () => {
+        expect(game.formatTimeHuman(0)).toBe('--');
+        expect(game.formatTimeHuman(null)).toBe('--');
+    });
+});
+
+describe('solutionSteps serialization', () => {
+    test('solutionSteps round-trips through JSON', () => {
+        const steps = [
+            { a: { value: 3, slot: 0 }, op: '*', b: { value: 8, slot: 1 }, result: { value: 24, slot: 0 } }
+        ];
+        const json = JSON.stringify(steps);
+        const parsed = JSON.parse(json);
+        expect(parsed).toEqual(steps);
+        expect(parsed[0].a.value).toBe(3);
+        expect(parsed[0].result.value).toBe(24);
+    });
+});
+
 describe('named constants', () => {
     test('TARGET_NUMBER is 24', () => {
         expect(game.TARGET_NUMBER).toBe(24);
