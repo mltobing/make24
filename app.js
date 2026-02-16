@@ -75,6 +75,7 @@ let playState = {
     moves: 0,
     cardStates: [],
     operatorHistory: [],
+    solutionSteps: [],   // [{a:{value,slot}, op, b:{value,slot}, result:{value,slot}}]
     undoCount: 0,
     startTime: null,
     endTime: null,
@@ -1052,6 +1053,7 @@ function resetPlay() {
     playState.selected = [];
     playState.cardStates = [];
     playState.operatorHistory = [];
+    playState.solutionSteps = [];
     playState.undoCount = 0;
     playState.startTime = null;
     playState.endTime = null;
@@ -1145,7 +1147,19 @@ function applyOperation(op) {
 
     playState.cardStates.push({
         cards: JSON.parse(JSON.stringify(playState.cards)),
-        operators: [...playState.operatorHistory]
+        operators: [...playState.operatorHistory],
+        solutionSteps: JSON.parse(JSON.stringify(playState.solutionSteps))
+    });
+
+    // Record solution step for replay
+    const slotA = playState.cards[i].slot;
+    const slotB = playState.cards[j].slot;
+    const targetSlot = slotA; // result goes to first card's slot
+    playState.solutionSteps.push({
+        a: { value: a, slot: slotA },
+        op: op,
+        b: { value: b, slot: slotB },
+        result: { value: result, slot: targetSlot }
     });
 
     playState.operatorHistory.push(op);
@@ -1171,6 +1185,7 @@ function undo() {
     const prevState = playState.cardStates.pop();
     playState.cards = prevState.cards;
     playState.operatorHistory = prevState.operators;
+    playState.solutionSteps = prevState.solutionSteps || [];
     playState.selected = [];
     playState.moves++;
     playState.undoCount++;
@@ -1232,6 +1247,7 @@ async function handleWin() {
             completed: true,
             moves: playState.moves,
             operators: [...playState.operatorHistory],
+            solutionSteps: JSON.parse(JSON.stringify(playState.solutionSteps)),
             undos: playState.undoCount,
             solveTime: solveTime,
             hinted: playState.hinted
@@ -1514,10 +1530,14 @@ function renderCalendar() {
             cell.classList.add('missed');
         }
 
-        // Tap to play that puzzle
+        // Tap: today loads puzzle, past days open details sheet
         cell.addEventListener('click', () => {
             document.getElementById('calendarModal').classList.remove('show');
-            initPuzzle(puzzleNum, puzzleNum !== today);
+            if (puzzleNum === today) {
+                initPuzzle(puzzleNum, false);
+            } else {
+                showPuzzleDetails(puzzleNum);
+            }
         });
 
         grid.appendChild(cell);
@@ -1622,7 +1642,7 @@ function handleMotion(event) {
     const now = Date.now();
     if (totalDelta > SHAKE_THRESHOLD && now - lastShakeTime > SHAKE_TIMEOUT_MS) {
         lastShakeTime = now;
-        undo();
+        animatedUndo();
     }
 }
 
@@ -1662,7 +1682,7 @@ document.querySelectorAll('.op-btn').forEach(btn => {
     btn.addEventListener('click', () => applyOperation(btn.dataset.op));
 });
 
-document.getElementById('undoBtn').addEventListener('click', undo);
+document.getElementById('undoBtn').addEventListener('click', animatedUndo);
 document.getElementById('hintBtn').addEventListener('click', useHint);
 
 // Sync nudge toast handlers
@@ -1691,6 +1711,298 @@ document.getElementById('operatorsOverlay').addEventListener('click', (e) => {
     }
 });
 
+// ============================================================
+// PUZZLE DETAILS SHEET
+// ============================================================
+function showPuzzleDetails(puzzleNum) {
+    const today = getTodayPuzzleNumber();
+    const history = gameState.history[puzzleNum];
+    const numbers = generatePuzzle(puzzleNum);
+    const opSymbols = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
+
+    document.getElementById('detailsDate').textContent = formatPuzzleDateLong(puzzleNum);
+
+    // Show puzzle tiles
+    const tilesEl = document.getElementById('detailsTiles');
+    tilesEl.innerHTML = '';
+    numbers.forEach(n => {
+        const tile = document.createElement('div');
+        tile.className = 'details-tile';
+        tile.textContent = n;
+        tilesEl.appendChild(tile);
+    });
+
+    const statusEl = document.getElementById('detailsStatus');
+    const statsRow = document.getElementById('detailsStatsRow');
+    const metaEl = document.getElementById('detailsMeta');
+    const actionsEl = document.getElementById('detailsActions');
+    statsRow.innerHTML = '';
+    actionsEl.innerHTML = '';
+
+    if (history?.completed) {
+        const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
+        const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
+
+        if (isFast) { statusEl.textContent = 'Perfect + Fast'; statusEl.className = 'details-status perfect'; }
+        else if (isPerfect) { statusEl.textContent = 'Perfect'; statusEl.className = 'details-status perfect'; }
+        else { statusEl.textContent = 'Solved'; statusEl.className = 'details-status solved'; }
+
+        // Stats
+        const addStat = (value, label) => {
+            const div = document.createElement('div');
+            div.className = 'details-stat';
+            div.innerHTML = `<span class="details-stat-value">${value}</span><span class="details-stat-label">${label}</span>`;
+            statsRow.appendChild(div);
+        };
+        addStat(formatTimeHuman(history.solveTime), 'Time');
+        addStat(String(history.moves), 'Moves');
+
+        metaEl.textContent = `Puzzle #${puzzleNum}`;
+
+        // Replay button (only if solutionSteps exist)
+        if (history.solutionSteps && history.solutionSteps.length > 0) {
+            const replayBtn = document.createElement('button');
+            replayBtn.className = 'btn btn-primary';
+            replayBtn.textContent = 'Replay solution';
+            replayBtn.addEventListener('click', () => {
+                document.getElementById('detailsModal').classList.remove('show');
+                startReplay(puzzleNum);
+            });
+            actionsEl.appendChild(replayBtn);
+        }
+
+        // Share button
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'btn btn-challenge';
+        shareBtn.textContent = 'Share';
+        shareBtn.addEventListener('click', () => {
+            const text = `Make 24 \u2014 ${formatPuzzleDate(puzzleNum)}\n${isPerfect ? '\u2B50 Perfect' : 'Solved'} in ${history.moves} moves\n${APP_CONFIG.publicUrl}`;
+            if (navigator.share) {
+                navigator.share({ text }).catch(() => copyToClipboard(text));
+            } else { copyToClipboard(text); }
+        });
+        actionsEl.appendChild(shareBtn);
+    } else {
+        statusEl.textContent = 'Missed';
+        statusEl.className = 'details-status missed';
+        metaEl.textContent = `Puzzle #${puzzleNum}`;
+    }
+
+    document.getElementById('detailsModal').classList.add('show');
+}
+
+// ============================================================
+// SOLUTION REPLAY ENGINE
+// ============================================================
+let replayState = {
+    steps: [],
+    numbers: [],
+    currentStep: -1, // -1 = showing initial tiles, 0..n-1 = after step i
+    playing: false,
+    timer: null,
+    cards: []   // current card state: [{value, slot, used}]
+};
+
+const REPLAY_STEP_MS = 900;
+const REPLAY_HIGHLIGHT_MS = 300;
+const REPLAY_OP_MS = 250;
+const REPLAY_MERGE_MS = 350;
+
+function startReplay(puzzleNum) {
+    const history = gameState.history[puzzleNum];
+    if (!history?.solutionSteps || history.solutionSteps.length === 0) return;
+
+    replayState.steps = history.solutionSteps;
+    replayState.numbers = generatePuzzle(puzzleNum);
+    replayState.currentStep = -1;
+    replayState.playing = false;
+
+    // Init cards at starting state
+    replayState.cards = replayState.numbers.map((v, i) => ({ value: v, slot: i, used: false }));
+
+    renderReplayCards();
+    document.getElementById('replayOpDisplay').classList.remove('visible');
+    document.getElementById('replayOpDisplay').textContent = '';
+    document.getElementById('replayPlayPause').textContent = '\u25B6';
+    document.getElementById('replayOverlay').classList.add('show');
+
+    // Auto-play after a short delay
+    setTimeout(() => {
+        replayState.playing = true;
+        document.getElementById('replayPlayPause').textContent = '\u23F8';
+        replayAutoStep();
+    }, 500);
+}
+
+function renderReplayCards() {
+    for (let s = 0; s < 4; s++) {
+        const slot = document.getElementById(`rslot${s}`);
+        slot.innerHTML = '';
+        const card = replayState.cards.find(c => c.slot === s && !c.used);
+        if (card) {
+            const el = document.createElement('div');
+            el.className = 'replay-card';
+            el.textContent = formatNumber(card.value);
+            slot.appendChild(el);
+        }
+    }
+}
+
+function replayAutoStep() {
+    if (!replayState.playing) return;
+    if (replayState.currentStep >= replayState.steps.length - 1) {
+        // Replay complete
+        replayState.playing = false;
+        document.getElementById('replayPlayPause').textContent = '\u25B6';
+        showConfetti();
+        return;
+    }
+    replayState.timer = setTimeout(() => {
+        replayStepForward();
+        replayAutoStep();
+    }, REPLAY_STEP_MS);
+}
+
+function replayStepForward() {
+    if (replayState.currentStep >= replayState.steps.length - 1) return;
+    replayState.currentStep++;
+    const step = replayState.steps[replayState.currentStep];
+    const opSymbols = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
+
+    // Highlight the two source cards
+    const slotA = document.getElementById(`rslot${step.a.slot}`);
+    const slotB = document.getElementById(`rslot${step.b.slot}`);
+    const cardA = slotA?.querySelector('.replay-card');
+    const cardB = slotB?.querySelector('.replay-card');
+    if (cardA) cardA.classList.add('highlight');
+    if (cardB) cardB.classList.add('highlight');
+
+    // Show operator
+    setTimeout(() => {
+        const opDisplay = document.getElementById('replayOpDisplay');
+        opDisplay.textContent = opSymbols[step.op] || step.op;
+        opDisplay.classList.add('visible');
+    }, REPLAY_HIGHLIGHT_MS);
+
+    // Merge animation
+    setTimeout(() => {
+        if (cardA) cardA.classList.add('merging');
+        if (cardB) cardB.classList.add('merging');
+        document.getElementById('replayOpDisplay').classList.remove('visible');
+    }, REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS);
+
+    // Apply state change and show result
+    setTimeout(() => {
+        // Update card state
+        const idxA = replayState.cards.findIndex(c => c.slot === step.a.slot && !c.used);
+        const idxB = replayState.cards.findIndex(c => c.slot === step.b.slot && !c.used);
+        if (idxA >= 0) replayState.cards[idxA].used = true;
+        if (idxB >= 0) replayState.cards[idxB].used = true;
+        replayState.cards.push({ value: step.result.value, slot: step.result.slot, used: false });
+
+        renderReplayCards();
+
+        // Appear animation on new card
+        const resultSlot = document.getElementById(`rslot${step.result.slot}`);
+        const newCard = resultSlot?.querySelector('.replay-card');
+        if (newCard) newCard.classList.add('appearing');
+    }, REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS);
+}
+
+function replayStepBack() {
+    if (replayState.currentStep < 0) return;
+
+    const step = replayState.steps[replayState.currentStep];
+    replayState.currentStep--;
+
+    // Remove the result card and restore source cards
+    const resultIdx = replayState.cards.findIndex(c => c.slot === step.result.slot && !c.used && c.value === step.result.value);
+    if (resultIdx >= 0) replayState.cards.splice(resultIdx, 1);
+
+    // Un-use source cards (find most recently used ones matching)
+    for (let i = replayState.cards.length - 1; i >= 0; i--) {
+        if (replayState.cards[i].used && replayState.cards[i].slot === step.b.slot && replayState.cards[i].value === step.b.value) {
+            replayState.cards[i].used = false;
+            break;
+        }
+    }
+    for (let i = replayState.cards.length - 1; i >= 0; i--) {
+        if (replayState.cards[i].used && replayState.cards[i].slot === step.a.slot && replayState.cards[i].value === step.a.value) {
+            replayState.cards[i].used = false;
+            break;
+        }
+    }
+
+    renderReplayCards();
+    document.getElementById('replayOpDisplay').classList.remove('visible');
+
+    // Add appear animation to restored cards
+    const slotA = document.getElementById(`rslot${step.a.slot}`);
+    const slotB = document.getElementById(`rslot${step.b.slot}`);
+    const cardA = slotA?.querySelector('.replay-card');
+    const cardB = slotB?.querySelector('.replay-card');
+    if (cardA) cardA.classList.add('appearing');
+    if (cardB) cardB.classList.add('appearing');
+}
+
+function closeReplay() {
+    replayState.playing = false;
+    if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
+    document.getElementById('replayOverlay').classList.remove('show');
+}
+
+function toggleReplayPlayPause() {
+    if (replayState.playing) {
+        replayState.playing = false;
+        if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
+        document.getElementById('replayPlayPause').textContent = '\u25B6';
+    } else {
+        if (replayState.currentStep >= replayState.steps.length - 1) {
+            // Reset to start
+            replayState.currentStep = -1;
+            replayState.cards = replayState.numbers.map((v, i) => ({ value: v, slot: i, used: false }));
+            renderReplayCards();
+        }
+        replayState.playing = true;
+        document.getElementById('replayPlayPause').textContent = '\u23F8';
+        replayAutoStep();
+    }
+}
+
+// ============================================================
+// ANIMATED UNDO (live play)
+// ============================================================
+function animatedUndo() {
+    if (playState.cardStates.length === 0 || playState.completed) return;
+
+    // Get the merged card slot before undo
+    const lastStep = playState.solutionSteps[playState.solutionSteps.length - 1];
+    const mergedSlot = lastStep ? lastStep.result.slot : null;
+
+    const prevState = playState.cardStates.pop();
+    playState.cards = prevState.cards;
+    playState.operatorHistory = prevState.operators;
+    playState.solutionSteps = prevState.solutionSteps || [];
+    playState.selected = [];
+    playState.moves++;
+    playState.undoCount++;
+
+    hideOperators();
+    renderCards();
+    updateResult();
+    updateMoveDots();
+
+    // Apply undo-appear animation to restored cards
+    if (lastStep) {
+        const slots = [lastStep.a.slot, lastStep.b.slot];
+        slots.forEach(s => {
+            const slotEl = document.getElementById(`slot${s}`);
+            const card = slotEl?.querySelector('.card');
+            if (card) card.classList.add('undo-appear');
+        });
+    }
+}
+
 // Calendar button opens calendar view
 document.getElementById('calendarBtn').addEventListener('click', showCalendar);
 document.getElementById('closeCalendar').addEventListener('click', () => {
@@ -1710,6 +2022,30 @@ document.getElementById('calNext').addEventListener('click', () => {
     renderCalendar();
 });
 document.getElementById('shareMonthBtn').addEventListener('click', shareHistoryGrid);
+
+// Details sheet
+document.getElementById('detailsClose').addEventListener('click', () => {
+    document.getElementById('detailsModal').classList.remove('show');
+});
+document.getElementById('detailsModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+});
+
+// Replay controls
+document.getElementById('replayPlayPause').addEventListener('click', toggleReplayPlayPause);
+document.getElementById('replayStepBack').addEventListener('click', () => {
+    replayState.playing = false;
+    if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
+    document.getElementById('replayPlayPause').textContent = '\u25B6';
+    replayStepBack();
+});
+document.getElementById('replayStepFwd').addEventListener('click', () => {
+    replayState.playing = false;
+    if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
+    document.getElementById('replayPlayPause').textContent = '\u25B6';
+    replayStepForward();
+});
+document.getElementById('replayCloseBtn').addEventListener('click', closeReplay);
 
 // Keep old archive modal functional via close button
 document.getElementById('closeArchive').addEventListener('click', () => {
@@ -1782,6 +2118,7 @@ if (typeof module !== 'undefined' && module.exports) {
         computeStreakFromHistory,
         formatPuzzleDate,
         formatPuzzleDateLong,
+        formatTimeHuman,
         VALID_PUZZLES,
         TARGET_NUMBER,
         FLOAT_EPSILON,

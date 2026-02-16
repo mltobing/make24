@@ -120,6 +120,38 @@
         </div>
     </div>
 
+    <!-- Puzzle details sheet -->
+    <div class="modal-overlay" id="detailsModal">
+        <div class="details-sheet" id="detailsSheet">
+            <div class="details-header">
+                <span class="details-date" id="detailsDate"></span>
+                <button class="details-close" id="detailsClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="details-tiles" id="detailsTiles"></div>
+            <div class="details-status" id="detailsStatus"></div>
+            <div class="details-stats-row" id="detailsStatsRow"></div>
+            <div class="details-meta" id="detailsMeta"></div>
+            <div class="details-actions" id="detailsActions"></div>
+        </div>
+    </div>
+
+    <!-- Replay overlay -->
+    <div class="replay-overlay" id="replayOverlay">
+        <div class="replay-grid" id="replayGrid">
+            <div class="replay-slot" id="rslot0"></div>
+            <div class="replay-slot" id="rslot1"></div>
+            <div class="replay-slot" id="rslot2"></div>
+            <div class="replay-slot" id="rslot3"></div>
+        </div>
+        <div class="replay-op-display" id="replayOpDisplay"></div>
+        <div class="replay-controls" id="replayControls">
+            <button class="replay-btn" id="replayStepBack" aria-label="Step back">&#x23EE;</button>
+            <button class="replay-btn replay-btn-main" id="replayPlayPause" aria-label="Play/Pause">&#x25B6;</button>
+            <button class="replay-btn" id="replayStepFwd" aria-label="Step forward">&#x23ED;</button>
+            <button class="replay-btn" id="replayCloseBtn" aria-label="Close replay">&times;</button>
+        </div>
+    </div>
+
     <!-- Calendar history modal -->
     <div class="modal-overlay" id="calendarModal">
         <div class="modal calendar-modal">
