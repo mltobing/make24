@@ -913,6 +913,7 @@ function showCleanWinState() {
     const display = document.getElementById('resultDisplay');
     display.textContent = '24';
     display.className = 'result-display win-clean';
+    display.style.cursor = 'pointer';
 }
 
 function clearWinState() {
@@ -921,6 +922,7 @@ function clearWinState() {
     const display = document.getElementById('resultDisplay');
     display.className = 'result-display';
     display.textContent = '';
+    display.style.cursor = '';
 }
 
 function initPuzzle(puzzleNum, isArchive = false) {
@@ -1526,13 +1528,15 @@ function renderCalendar() {
             cell.classList.add('missed');
         }
 
-        // Tap: today loads puzzle, past days open details sheet
+        // Tap: today loads puzzle, solved past days replay, unsolved past days load for play
         cell.addEventListener('click', () => {
             document.getElementById('calendarModal').classList.remove('show');
             if (puzzleNum === today) {
                 initPuzzle(puzzleNum, false);
+            } else if (history?.completed && history.solutionSteps?.length > 0) {
+                startReplay(puzzleNum);
             } else {
-                showPuzzleDetails(puzzleNum);
+                initPuzzle(puzzleNum, true);
             }
         });
 
@@ -2052,10 +2056,31 @@ document.getElementById('shareBtn').addEventListener('click', share);
 document.getElementById('challengeBtn').addEventListener('click', shareChallenge);
 document.getElementById('shareHistoryBtn').addEventListener('click', shareHistoryGrid);
 
+// Tap the big green "24" to replay the solution
+document.getElementById('resultDisplay').addEventListener('click', () => {
+    if (!playState.completed) return;
+    const puzzleNum = currentPuzzle.puzzleNum;
+    const history = gameState.history[puzzleNum];
+    if (history?.solutionSteps?.length > 0) {
+        hideVictoryCard();
+        startReplay(puzzleNum);
+    }
+});
+
 // Victory card close: X button or tap outside
 document.getElementById('victoryClose').addEventListener('click', hideVictoryCard);
 document.getElementById('victoryBackdrop').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) hideVictoryCard();
+});
+
+// Tap victory badge to replay solution
+document.getElementById('victoryBadge').addEventListener('click', () => {
+    const puzzleNum = currentPuzzle.puzzleNum;
+    const history = gameState.history[puzzleNum];
+    if (history?.solutionSteps?.length > 0) {
+        hideVictoryCard();
+        startReplay(puzzleNum);
+    }
 });
 
 document.getElementById('archiveModal').addEventListener('click', (e) => {
