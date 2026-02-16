@@ -458,11 +458,7 @@ function dismissSyncNudge() {
 // Nudge link opens the archive modal (where the sign-in lives for now)
 function nudgeOpenSignIn() {
     dismissSyncNudge();
-    showArchive();
-    setTimeout(() => {
-        const syncSection = document.getElementById('syncSection');
-        if (syncSection) syncSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, ARCHIVE_WIN_MODAL_DELAY_MS);
+    document.getElementById('settingsModal').classList.add('show');
 }
 
 async function getAuthHeaders() {
@@ -2063,6 +2059,17 @@ document.getElementById('victoryBackdrop').addEventListener('click', (e) => {
 });
 
 document.getElementById('archiveModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+});
+
+// Settings modal
+document.getElementById('settingsBtn').addEventListener('click', () => {
+    document.getElementById('settingsModal').classList.add('show');
+});
+document.getElementById('closeSettings').addEventListener('click', () => {
+    document.getElementById('settingsModal').classList.remove('show');
+});
+document.getElementById('settingsModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
 });
 
