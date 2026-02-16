@@ -820,7 +820,7 @@ function shareChallenge() {
     const isPerfect = history?.completed && history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
 
     let text = `\u2694\uFE0F Can you beat my Make 24?\n`;
-    text += `Puzzle #${puzzleNum}`;
+    text += formatPuzzleDateLong(puzzleNum);
     if (isPerfect) text += ` \u2014 I got \u2B50 Perfect`;
     else text += ` \u2014 I solved it in ${moves} moves`;
     text += `\n\n${APP_CONFIG.publicUrl}`;
@@ -1409,7 +1409,7 @@ function generateShareText() {
     const opSymbols = { '+': '\u2795', '-': '\u2796', '*': '\u2716\uFE0F', '/': '\u2797' };
     const opLine = operators.map(op => opSymbols[op]).join(' ');
 
-    let text = `24 #${currentPuzzle.puzzleNum}\n`;
+    let text = `24 \u2014 ${formatPuzzleDateLong(currentPuzzle.puzzleNum)}\n`;
     text += `${opLine}\n`;
     if (isFast) text += `\u26A1 Perfect + Fast!\n`;
     else if (isPerfect) text += `\u2B50 Perfect!\n`;
@@ -1808,7 +1808,7 @@ function showPuzzleDetails(puzzleNum) {
         addStat(formatTimeHuman(history.solveTime), 'Time');
         addStat(String(history.moves), 'Moves');
 
-        metaEl.textContent = `Puzzle #${puzzleNum}`;
+        metaEl.textContent = formatPuzzleDateLong(puzzleNum);
 
         // Replay button (only if solutionSteps exist)
         if (history.solutionSteps && history.solutionSteps.length > 0) {
@@ -1836,7 +1836,7 @@ function showPuzzleDetails(puzzleNum) {
     } else {
         statusEl.textContent = 'Missed';
         statusEl.className = 'details-status missed';
-        metaEl.textContent = `Puzzle #${puzzleNum}`;
+        metaEl.textContent = formatPuzzleDateLong(puzzleNum);
     }
 
     document.getElementById('detailsModal').classList.add('show');
