@@ -62,16 +62,30 @@
         <div class="move-dot perfect-hint"></div>
     </div>
 
-    <div class="message" id="successMessage">
-        <h2 id="successTitle">🎉 Nice!</h2>
-        <p id="successSubtitle">You made 24!</p>
-        <div class="difficulty-badge" id="difficultyBadge" style="display:none;"></div>
-        <div class="stats" id="successStats"></div>
-        <div class="percentile" id="percentileDisplay"></div>
-        <div class="btn-row">
-            <button class="btn btn-primary" id="shareBtn" aria-label="Share result">Share</button>
-            <button class="btn btn-challenge" id="challengeBtn" aria-label="Challenge a friend">⚔️ Challenge</button>
-            <button class="btn btn-secondary" id="closeSuccessBtn" aria-label="Close">Close</button>
+    <div class="victory-backdrop" id="victoryBackdrop">
+        <div class="victory-card" id="victoryCard">
+            <button class="victory-close" id="victoryClose" aria-label="Close">&times;</button>
+            <div class="victory-badge" id="victoryBadge"></div>
+            <div class="victory-date" id="victoryDate"></div>
+            <div class="victory-stats">
+                <div class="victory-stat">
+                    <span class="victory-stat-value" id="victoryTime">--</span>
+                    <span class="victory-stat-label">time</span>
+                </div>
+                <div class="victory-stat">
+                    <span class="victory-stat-value" id="victoryMoves">--</span>
+                    <span class="victory-stat-label">moves</span>
+                </div>
+                <div class="victory-stat">
+                    <span class="victory-stat-value" id="victoryStreak">--</span>
+                    <span class="victory-stat-label">streak</span>
+                </div>
+            </div>
+            <div class="victory-percentile" id="victoryPercentile"></div>
+            <div class="victory-actions">
+                <button class="btn btn-primary" id="shareBtn" aria-label="Share result">Share</button>
+                <button class="btn btn-challenge" id="challengeBtn" aria-label="Challenge a friend">Challenge</button>
+            </div>
         </div>
     </div>
 

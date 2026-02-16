@@ -927,7 +927,7 @@ function clearWinState() {
 }
 
 function initPuzzle(puzzleNum, isArchive = false) {
-    document.getElementById('successMessage').classList.remove('show');
+    hideVictoryCard();
     hideOperators();
     clearHintTimer();
     clearWinState();
@@ -955,30 +955,21 @@ function initPuzzle(puzzleNum, isArchive = false) {
         const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
         const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
 
-        const title = document.getElementById('successTitle');
-        const subtitle = document.getElementById('successSubtitle');
-        const stats = document.getElementById('successStats');
-
-        if (isFast) {
-            title.textContent = '\u26A1 Perfect + Fast!';
-            title.classList.add('perfect');
-            subtitle.textContent = `Solved in ${history.solveTime}s!`;
-        } else if (isPerfect) {
-            title.textContent = '\u2B50 Perfect!';
-            title.classList.add('perfect');
-            subtitle.textContent = 'Solved in just 3 moves!';
-        } else {
-            title.textContent = '\uD83C\uDF89 Already Solved';
-            title.classList.remove('perfect');
-            subtitle.textContent = `Completed in ${history.moves} moves`;
-        }
-
-        stats.innerHTML = `Moves: ${history.moves}`;
-        showDifficultyBadge(puzzleNum);
-        document.getElementById('percentileDisplay').textContent = '\uD83D\uDD12 History is locked';
+        let badge = 'Solved';
+        let badgeClass = '';
+        if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
+        else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
 
         setTimeout(() => {
-            document.getElementById('successMessage').classList.add('show');
+            showVictoryCard({
+                badge,
+                badgeClass,
+                date: formatPuzzleDateLong(puzzleNum),
+                time: formatTimeHuman(history.solveTime),
+                moves: String(history.moves),
+                streak: String(gameState.streak),
+                percentileText: ''
+            });
         }, ARCHIVE_WIN_MODAL_DELAY_MS);
         return;
     }
@@ -1007,46 +998,51 @@ function initPuzzle(puzzleNum, isArchive = false) {
         const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
         const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
 
-        const title = document.getElementById('successTitle');
-        const subtitle = document.getElementById('successSubtitle');
-        const stats = document.getElementById('successStats');
-
-        if (isFast) {
-            title.textContent = '\u26A1 Perfect + Fast!';
-            title.classList.add('perfect');
-            subtitle.textContent = `Solved in ${history.solveTime}s!`;
-        } else if (isPerfect) {
-            title.textContent = '\u2B50 Perfect!';
-            title.classList.add('perfect');
-            subtitle.textContent = 'Solved in just 3 moves!';
-        } else {
-            title.textContent = '\uD83C\uDF89 Nice!';
-            title.classList.remove('perfect');
-            subtitle.textContent = 'You made 24!';
-        }
-
-        stats.innerHTML = `Moves: ${history.moves}`;
-        showDifficultyBadge(puzzleNum);
-        document.getElementById('percentileDisplay').textContent = '';
+        let badge2 = 'Solved';
+        let badgeClass2 = '';
+        if (isFast) { badge2 = 'Perfect + Fast'; badgeClass2 = 'perfect'; }
+        else if (isPerfect) { badge2 = 'Perfect'; badgeClass2 = 'perfect'; }
 
         setTimeout(() => {
-            document.getElementById('successMessage').classList.add('show');
+            showVictoryCard({
+                badge: badge2,
+                badgeClass: badgeClass2,
+                date: formatPuzzleDateLong(puzzleNum),
+                time: formatTimeHuman(history.solveTime),
+                moves: String(history.moves),
+                streak: String(gameState.streak),
+                percentileText: ''
+            });
         }, ARCHIVE_WIN_MODAL_DELAY_MS);
     } else if (!alreadySolved) {
         startHintTimer();
     }
 }
 
-function showDifficultyBadge(puzzleNum) {
-    const badge = document.getElementById('difficultyBadge');
-    const diff = getCachedDifficulty(puzzleNum);
-    badge.textContent = `${diff.emoji} ${diff.label}`;
-    badge.className = 'difficulty-badge';
-    badge.style.display = 'inline-block';
+function showVictoryCard(opts) {
+    const { badge, badgeClass, date, time, moves, streak, percentileText } = opts;
+    document.getElementById('victoryBadge').textContent = badge;
+    document.getElementById('victoryBadge').className = 'victory-badge' + (badgeClass ? ` ${badgeClass}` : '');
+    document.getElementById('victoryDate').textContent = date;
+    document.getElementById('victoryTime').textContent = time;
+    document.getElementById('victoryMoves').textContent = moves;
+    document.getElementById('victoryStreak').textContent = streak;
+    const pEl = document.getElementById('victoryPercentile');
+    pEl.textContent = percentileText || '';
+    pEl.className = 'victory-percentile';
+    document.getElementById('victoryBackdrop').classList.add('show');
 }
 
-function hideDifficultyBadge() {
-    document.getElementById('difficultyBadge').style.display = 'none';
+function hideVictoryCard() {
+    document.getElementById('victoryBackdrop').classList.remove('show');
+}
+
+function formatTimeHuman(seconds) {
+    if (!seconds || seconds <= 0) return '--';
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 function resetPlay() {
@@ -1254,31 +1250,22 @@ async function handleWin() {
     // Clean win: fade cards, show big 24
     showCleanWinState();
 
-    const title = document.getElementById('successTitle');
-    const subtitle = document.getElementById('successSubtitle');
-    const stats = document.getElementById('successStats');
-
-    if (isFast) {
-        title.textContent = '\u26A1 Perfect + Fast!';
-        title.classList.add('perfect');
-        subtitle.textContent = `Solved in ${solveTime}s!`;
-    } else if (isPerfect) {
-        title.textContent = '\u2B50 Perfect!';
-        title.classList.add('perfect');
-        subtitle.textContent = 'Solved in just 3 moves!';
-    } else {
-        title.textContent = '\uD83C\uDF89 Nice!';
-        title.classList.remove('perfect');
-        subtitle.textContent = 'You made 24!';
-    }
-
-    stats.innerHTML = playState.hinted ? `Moves: ${playState.moves} (with hint)` : `Moves: ${playState.moves}`;
-    showDifficultyBadge(currentPuzzle.puzzleNum);
-
-    document.getElementById('percentileDisplay').textContent = 'Loading...';
+    let badge = 'Solved';
+    let badgeClass = '';
+    if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
+    else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
+    if (playState.hinted) { badge += ' (with hint)'; }
 
     setTimeout(() => {
-        document.getElementById('successMessage').classList.add('show');
+        showVictoryCard({
+            badge,
+            badgeClass,
+            date: formatPuzzleDateLong(currentPuzzle.puzzleNum),
+            time: formatTimeHuman(solveTime),
+            moves: String(playState.moves),
+            streak: String(gameState.streak),
+            percentileText: 'Loading...'
+        });
     }, WIN_MODAL_DELAY_MS);
 
     const percentileData = await trackPlay(true);
@@ -1325,7 +1312,6 @@ function updateUI() {
     } else {
         banner.classList.remove('show');
     }
-    hideDifficultyBadge();
     updateStreakDisplay();
     updateMoveDots();
 }
@@ -1603,18 +1589,19 @@ async function syncStreakToSupabase() {
 }
 
 function displayPercentile(data) {
-    const display = document.getElementById('percentileDisplay');
+    const display = document.getElementById('victoryPercentile');
+    if (!display) return;
     if (!data || !data.percentile || !data.total_players) {
         display.textContent = '';
-        display.classList.remove('highlight');
+        display.className = 'victory-percentile';
         return;
     }
     const p = data.percentile, t = data.total_players;
     let message = '';
-    if (p >= 90) { message = `\uD83C\uDFC6 Top ${100 - p}% of ${t} players today!`; display.classList.add('highlight'); }
-    else if (p >= 75) { message = `\u2B50 Better than ${p}% of ${t} players!`; display.classList.add('highlight'); }
-    else if (p >= 50) { message = `\uD83D\uDCCA Better than ${p}% of ${t} players`; display.classList.remove('highlight'); }
-    else { message = `${t} players solved today`; display.classList.remove('highlight'); }
+    if (p >= 90) { message = `Top ${100 - p}% of ${t} players today`; display.className = 'victory-percentile highlight'; }
+    else if (p >= 75) { message = `Better than ${p}% of ${t} players`; display.className = 'victory-percentile highlight'; }
+    else if (p >= 50) { message = `Better than ${p}% of ${t} players`; display.className = 'victory-percentile'; }
+    else { message = `${t} players solved today`; display.className = 'victory-percentile'; }
     display.textContent = message;
 }
 
@@ -1733,8 +1720,10 @@ document.getElementById('shareBtn').addEventListener('click', share);
 document.getElementById('challengeBtn').addEventListener('click', shareChallenge);
 document.getElementById('shareHistoryBtn').addEventListener('click', shareHistoryGrid);
 
-document.getElementById('closeSuccessBtn').addEventListener('click', () => {
-    document.getElementById('successMessage').classList.remove('show');
+// Victory card close: X button or tap outside
+document.getElementById('victoryClose').addEventListener('click', hideVictoryCard);
+document.getElementById('victoryBackdrop').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) hideVictoryCard();
 });
 
 document.getElementById('archiveModal').addEventListener('click', (e) => {
