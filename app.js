@@ -454,11 +454,10 @@ function dismissSyncNudge() {
     localStorage.setItem(NUDGE_DISMISSED_KEY, 'forever');
 }
 
-// Nudge link opens the archive modal (where the sign-in lives)
+// Nudge link opens the archive modal (where the sign-in lives for now)
 function nudgeOpenSignIn() {
     dismissSyncNudge();
     showArchive();
-    // Scroll sync section into view after modal opens
     setTimeout(() => {
         const syncSection = document.getElementById('syncSection');
         if (syncSection) syncSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -816,6 +815,21 @@ function getPuzzleNumber(date) {
 function getDateFromPuzzleNumber(num) {
     const epoch = new Date(EPOCH_DATE);
     return new Date(epoch.getTime() + (num - 1) * 24 * 60 * 60 * 1000);
+}
+
+function formatPuzzleDate(puzzleNum) {
+    const today = getTodayPuzzleNumber();
+    if (puzzleNum === today) return 'Today';
+    if (puzzleNum === today - 1) return 'Yesterday';
+    const d = getDateFromPuzzleNumber(puzzleNum);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
+function formatPuzzleDateLong(puzzleNum) {
+    const d = getDateFromPuzzleNumber(puzzleNum);
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 }
 
 function getTodayPuzzleNumber() {
@@ -1303,8 +1317,14 @@ function updateMoveDots() {
 }
 
 function updateUI() {
-    document.getElementById('puzzleNumber').textContent = `#${currentPuzzle.puzzleNum}`;
-    document.getElementById('archiveBanner').classList.toggle('show', currentPuzzle.isArchive);
+    document.getElementById('puzzleDate').textContent = formatPuzzleDate(currentPuzzle.puzzleNum);
+    const banner = document.getElementById('archiveBanner');
+    if (currentPuzzle.isArchive) {
+        banner.textContent = formatPuzzleDate(currentPuzzle.puzzleNum);
+        banner.classList.add('show');
+    } else {
+        banner.classList.remove('show');
+    }
     hideDifficultyBadge();
     updateStreakDisplay();
     updateMoveDots();
@@ -1410,6 +1430,112 @@ function showArchive() {
     }
 
     modal.classList.add('show');
+}
+
+// ============================================================
+// CALENDAR HISTORY VIEW
+// ============================================================
+let calendarViewYear = null;
+let calendarViewMonth = null; // 0-indexed
+
+function showCalendar() {
+    const now = new Date();
+    calendarViewYear = now.getUTCFullYear();
+    calendarViewMonth = now.getUTCMonth();
+    renderCalendar();
+    document.getElementById('calendarModal').classList.add('show');
+}
+
+function renderCalendar() {
+    const grid = document.getElementById('calendarGrid');
+    const title = document.getElementById('calTitle');
+    const streakEl = document.getElementById('calStreak');
+    const nextBtn = document.getElementById('calNext');
+    grid.innerHTML = '';
+
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    title.textContent = `${months[calendarViewMonth]} ${calendarViewYear}`;
+
+    // Streak summary
+    streakEl.textContent = gameState.streak > 0 ? `\uD83D\uDD25 ${gameState.streak} day streak` : '';
+
+    // Disable forward nav if viewing current month
+    const now = new Date();
+    const isCurrentMonth = calendarViewYear === now.getUTCFullYear() && calendarViewMonth === now.getUTCMonth();
+    nextBtn.disabled = isCurrentMonth;
+
+    // Disable backward nav before epoch
+    const epochDate = new Date(EPOCH_DATE);
+    const prevBtn = document.getElementById('calPrev');
+    const isEpochMonth = calendarViewYear === epochDate.getUTCFullYear() && calendarViewMonth === epochDate.getUTCMonth();
+    prevBtn.disabled = (calendarViewYear < epochDate.getUTCFullYear()) ||
+        (calendarViewYear === epochDate.getUTCFullYear() && calendarViewMonth <= epochDate.getUTCMonth());
+
+    // First day of month (0=Sun, convert to Mon-start: 0=Mon)
+    const firstDay = new Date(Date.UTC(calendarViewYear, calendarViewMonth, 1));
+    let startDow = firstDay.getUTCDay(); // 0=Sun
+    startDow = startDow === 0 ? 6 : startDow - 1; // Convert to Mon=0
+
+    const daysInMonth = new Date(Date.UTC(calendarViewYear, calendarViewMonth + 1, 0)).getUTCDate();
+    const today = getTodayPuzzleNumber();
+
+    // Empty cells before first day
+    for (let i = 0; i < startDow; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'cal-day empty';
+        grid.appendChild(empty);
+    }
+
+    // Day cells
+    for (let day = 1; day <= daysInMonth; day++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-day';
+        cell.textContent = day;
+
+        const dateUTC = new Date(Date.UTC(calendarViewYear, calendarViewMonth, day));
+        const puzzleNum = getPuzzleNumber(dateUTC);
+
+        // Future day
+        if (puzzleNum > today) {
+            cell.classList.add('future');
+            grid.appendChild(cell);
+            continue;
+        }
+
+        // Before epoch
+        if (puzzleNum < 1) {
+            cell.classList.add('empty');
+            grid.appendChild(cell);
+            continue;
+        }
+
+        // Today
+        if (puzzleNum === today) {
+            cell.classList.add('today');
+        }
+
+        // Check history
+        const history = gameState.history[puzzleNum];
+        if (history?.completed) {
+            const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
+            const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
+            if (isFast || isPerfect) {
+                cell.classList.add('perfect');
+            } else {
+                cell.classList.add('solved');
+            }
+        } else if (puzzleNum < today) {
+            cell.classList.add('missed');
+        }
+
+        // Tap to play that puzzle
+        cell.addEventListener('click', () => {
+            document.getElementById('calendarModal').classList.remove('show');
+            initPuzzle(puzzleNum, puzzleNum !== today);
+        });
+
+        grid.appendChild(cell);
+    }
 }
 
 // Supabase tracking
@@ -1578,7 +1704,27 @@ document.getElementById('operatorsOverlay').addEventListener('click', (e) => {
     }
 });
 
-document.getElementById('puzzleNumber').addEventListener('click', showArchive);
+// Calendar button opens calendar view
+document.getElementById('calendarBtn').addEventListener('click', showCalendar);
+document.getElementById('closeCalendar').addEventListener('click', () => {
+    document.getElementById('calendarModal').classList.remove('show');
+});
+document.getElementById('calendarModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+});
+document.getElementById('calPrev').addEventListener('click', () => {
+    calendarViewMonth--;
+    if (calendarViewMonth < 0) { calendarViewMonth = 11; calendarViewYear--; }
+    renderCalendar();
+});
+document.getElementById('calNext').addEventListener('click', () => {
+    calendarViewMonth++;
+    if (calendarViewMonth > 11) { calendarViewMonth = 0; calendarViewYear++; }
+    renderCalendar();
+});
+document.getElementById('shareMonthBtn').addEventListener('click', shareHistoryGrid);
+
+// Keep old archive modal functional via close button
 document.getElementById('closeArchive').addEventListener('click', () => {
     document.getElementById('archiveModal').classList.remove('show');
 });
@@ -1645,6 +1791,8 @@ if (typeof module !== 'undefined' && module.exports) {
         getPuzzleNumber,
         getDateFromPuzzleNumber,
         computeStreakFromHistory,
+        formatPuzzleDate,
+        formatPuzzleDateLong,
         VALID_PUZZLES,
         TARGET_NUMBER,
         FLOAT_EPSILON,

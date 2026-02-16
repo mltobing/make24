@@ -62,6 +62,21 @@ body {
     z-index: 5;
 }
 
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.puzzle-date {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1;
+}
+
+/* Legacy puzzle-number kept for JS compat */
 .puzzle-number {
     font-family: 'Space Mono', monospace;
     font-size: 1.5rem;
@@ -711,10 +726,12 @@ body {
 
 /* Archive mode indicator */
 .archive-banner {
-    background: #f59e0b; color: #0f172a; padding: 8px 16px; border-radius: 8px;
-    font-size: 0.875rem; font-weight: 600;
+    background: rgba(245, 158, 11, 0.15); color: #f59e0b;
+    padding: 6px 14px; border-radius: 6px;
+    font-size: 0.8125rem; font-weight: 500;
     position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
     display: none; z-index: 10;
+    border: 1px solid rgba(245, 158, 11, 0.25);
 }
 .archive-banner.show { display: block; }
 
@@ -745,4 +762,149 @@ body {
     opacity: 1;
     pointer-events: auto;
     transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================
+   CALENDAR BUTTON (header)
+   ============================================================ */
+.calendar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: color 0.15s, opacity 0.15s;
+    opacity: 0.6;
+    padding: 0;
+}
+
+.calendar-btn:hover {
+    opacity: 1;
+    color: #22d3ee;
+}
+
+.calendar-btn:active {
+    transform: scale(0.9);
+}
+
+/* ============================================================
+   CALENDAR MODAL
+   ============================================================ */
+.calendar-modal {
+    padding: 20px;
+}
+
+.calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.calendar-nav {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 12px;
+    border-radius: 6px;
+    transition: color 0.15s;
+    line-height: 1;
+}
+.calendar-nav:hover { color: #f1f5f9; }
+.calendar-nav:disabled { opacity: 0.2; cursor: default; }
+
+.calendar-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.calendar-streak {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    margin-bottom: 16px;
+}
+
+.calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    margin-bottom: 4px;
+}
+
+.calendar-weekdays span {
+    text-align: center;
+    font-size: 0.6875rem;
+    color: #64748b;
+    text-transform: uppercase;
+    padding: 4px 0;
+    letter-spacing: 0.03em;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.cal-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    color: #94a3b8;
+    position: relative;
+}
+
+.cal-day:hover { background: rgba(255, 255, 255, 0.05); }
+.cal-day:active { transform: scale(0.92); }
+.cal-day.empty { cursor: default; }
+.cal-day.empty:hover { background: none; }
+.cal-day.future { color: #334155; cursor: default; }
+.cal-day.future:hover { background: none; }
+
+.cal-day.today {
+    color: #f1f5f9;
+    font-weight: 700;
+    background: rgba(34, 211, 238, 0.1);
+}
+
+.cal-day.solved {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    font-weight: 600;
+}
+
+.cal-day.perfect {
+    background: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+.cal-day.missed {
+    color: #64748b;
+}
+
+.cal-day.missed::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #334155;
 }

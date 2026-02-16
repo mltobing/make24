@@ -198,6 +198,30 @@ describe('every puzzle in VALID_PUZZLES is solvable', () => {
     });
 });
 
+describe('formatPuzzleDate', () => {
+    test('returns "Today" for today\'s puzzle', () => {
+        const today = game.getPuzzleNumber(new Date(Date.UTC(
+            new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()
+        )));
+        expect(game.formatPuzzleDate(today)).toBe('Today');
+    });
+    test('returns "Yesterday" for yesterday\'s puzzle', () => {
+        const today = game.getPuzzleNumber(new Date(Date.UTC(
+            new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()
+        )));
+        expect(game.formatPuzzleDate(today - 1)).toBe('Yesterday');
+    });
+    test('returns "Jan 1" for puzzle 1 (epoch)', () => {
+        expect(game.formatPuzzleDate(1)).toBe('Jan 1');
+    });
+});
+
+describe('formatPuzzleDateLong', () => {
+    test('returns full date for puzzle 1', () => {
+        expect(game.formatPuzzleDateLong(1)).toBe('January 1, 2025');
+    });
+});
+
 describe('named constants', () => {
     test('TARGET_NUMBER is 24', () => {
         expect(game.TARGET_NUMBER).toBe(24);
