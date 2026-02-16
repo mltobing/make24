@@ -213,6 +213,44 @@ function canMake24From3(nums) {
     return false;
 }
 
+// Full solver that returns solutionSteps in replay format
+function solve24Full(numbers) {
+    const ops = ['+', '-', '*', '/'];
+
+    // Try all pairs, compute result, recurse on remaining 3 then 2 numbers
+    function solveRecursive(cards) {
+        if (cards.length === 1) {
+            if (Math.abs(cards[0].value - TARGET_NUMBER) < FLOAT_EPSILON) return [];
+            return null;
+        }
+        for (let i = 0; i < cards.length; i++) {
+            for (let j = 0; j < cards.length; j++) {
+                if (i === j) continue;
+                for (const op of ops) {
+                    const r = calc(cards[i].value, op, cards[j].value);
+                    if (r === null) continue;
+                    const remaining = cards.filter((_, idx) => idx !== i && idx !== j);
+                    const resultCard = { value: r, slot: cards[i].slot };
+                    remaining.push(resultCard);
+                    const rest = solveRecursive(remaining);
+                    if (rest !== null) {
+                        return [{
+                            a: { value: cards[i].value, slot: cards[i].slot },
+                            op: op,
+                            b: { value: cards[j].value, slot: cards[j].slot },
+                            result: { value: r, slot: cards[i].slot }
+                        }, ...rest];
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    const cards = numbers.map((v, i) => ({ value: v, slot: i }));
+    return solveRecursive(cards);
+}
+
 function startHintTimer() {
     clearHintTimer();
     hintVisible = false;
@@ -831,8 +869,9 @@ function formatPuzzleDateLong(puzzleNum) {
 
 function getTodayPuzzleNumber() {
     const now = new Date();
-    const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    return getPuzzleNumber(utcDate);
+    // Use local midnight so the puzzle changes at midnight in the user's timezone
+    const localDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return getPuzzleNumber(localDate);
 }
 
 function generatePuzzle(puzzleNum) {
@@ -1463,7 +1502,7 @@ function renderCalendar() {
 
     // Disable forward nav if viewing current month
     const now = new Date();
-    const isCurrentMonth = calendarViewYear === now.getUTCFullYear() && calendarViewMonth === now.getUTCMonth();
+    const isCurrentMonth = calendarViewYear === now.getFullYear() && calendarViewMonth === now.getMonth();
     nextBtn.disabled = isCurrentMonth;
 
     // Disable backward nav before epoch
@@ -1812,10 +1851,18 @@ const REPLAY_MERGE_MS = 450;
 
 function startReplay(puzzleNum) {
     const history = gameState.history[puzzleNum];
-    if (!history?.solutionSteps || history.solutionSteps.length === 0) return;
+    const numbers = generatePuzzle(puzzleNum);
 
-    replayState.steps = history.solutionSteps;
-    replayState.numbers = generatePuzzle(puzzleNum);
+    let steps = history?.solutionSteps;
+    if (!steps || steps.length === 0) {
+        // No recorded steps — compute a perfect solution
+        steps = solve24Full(numbers);
+        if (!steps) return;
+    }
+
+    replayState.steps = steps;
+    replayState.numbers = numbers;
+    replayState.puzzleNum = puzzleNum;
     replayState.currentStep = -1;
     replayState.playing = false;
 
@@ -1825,6 +1872,11 @@ function startReplay(puzzleNum) {
     renderReplayCards();
     document.getElementById('replayOpDisplay').classList.remove('visible');
     document.getElementById('replayOpDisplay').textContent = '';
+
+    // Initialize dots for replay: show total moves as empty, none filled yet
+    replayState.totalMoves = history?.moves || steps.length;
+    updateReplayDots(0, replayState.totalMoves);
+
     document.getElementById('replayOverlay').classList.add('show');
 
     // Auto-play after a short delay
@@ -1832,6 +1884,22 @@ function startReplay(puzzleNum) {
         replayState.playing = true;
         replayAutoStep();
     }, 600);
+}
+
+function updateReplayDots(completedSteps, totalMoves) {
+    const container = document.getElementById('moveDots');
+    container.innerHTML = '';
+    const totalDots = Math.max(PERFECT_MOVES, totalMoves);
+    for (let i = 0; i < totalDots; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'move-dot';
+        if (i < completedSteps) {
+            dot.classList.add(i < PERFECT_MOVES ? 'filled' : 'excess');
+        } else {
+            dot.classList.add('perfect-hint');
+        }
+        container.appendChild(dot);
+    }
 }
 
 function renderReplayCards() {
@@ -1851,15 +1919,45 @@ function renderReplayCards() {
 function replayAutoStep() {
     if (!replayState.playing) return;
     if (replayState.currentStep >= replayState.steps.length - 1) {
-        // Replay complete
+        // Replay complete — wait for last merge animation, then show victory
         replayState.playing = false;
-        showConfetti();
+        const lastStepAnimTime = REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS + 300;
+        setTimeout(() => {
+            closeReplay();
+            showConfetti();
+            showReplayVictoryCard();
+        }, lastStepAnimTime);
         return;
     }
     replayState.timer = setTimeout(() => {
         replayStepForward();
         replayAutoStep();
     }, REPLAY_STEP_MS);
+}
+
+function showReplayVictoryCard() {
+    const puzzleNum = replayState.puzzleNum;
+    const history = gameState.history[puzzleNum];
+    if (!history) return;
+
+    const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
+    const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
+
+    let badge = 'Solved';
+    let badgeClass = '';
+    if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
+    else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
+    if (history.hinted) { badge += ' (with hint)'; }
+
+    showVictoryCard({
+        badge,
+        badgeClass,
+        date: formatPuzzleDateLong(puzzleNum),
+        time: formatTimeHuman(history.solveTime),
+        moves: String(history.moves),
+        streak: String(gameState.streak),
+        percentileText: ''
+    });
 }
 
 function replayStepForward() {
@@ -1905,6 +2003,9 @@ function replayStepForward() {
         const resultSlot = document.getElementById(`rslot${step.result.slot}`);
         const newCard = resultSlot?.querySelector('.replay-card');
         if (newCard) newCard.classList.add('appearing');
+
+        // Update move dots to reflect progress
+        updateReplayDots(replayState.currentStep + 1, replayState.totalMoves);
     }, REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS);
 }
 
@@ -1948,6 +2049,8 @@ function closeReplay() {
     replayState.playing = false;
     if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
     document.getElementById('replayOverlay').classList.remove('show');
+    // Restore original move dots
+    updateMoveDots();
 }
 
 
@@ -2029,11 +2132,8 @@ document.getElementById('shareHistoryBtn').addEventListener('click', shareHistor
 document.getElementById('resultDisplay').addEventListener('click', () => {
     if (!playState.completed) return;
     const puzzleNum = currentPuzzle.puzzleNum;
-    const history = gameState.history[puzzleNum];
-    if (history?.solutionSteps?.length > 0) {
-        hideVictoryCard();
-        startReplay(puzzleNum);
-    }
+    hideVictoryCard();
+    startReplay(puzzleNum);
 });
 
 // Victory card close: X button or tap outside
@@ -2045,11 +2145,8 @@ document.getElementById('victoryBackdrop').addEventListener('click', (e) => {
 // Tap victory badge to replay solution
 document.getElementById('victoryBadge').addEventListener('click', () => {
     const puzzleNum = currentPuzzle.puzzleNum;
-    const history = gameState.history[puzzleNum];
-    if (history?.solutionSteps?.length > 0) {
-        hideVictoryCard();
-        startReplay(puzzleNum);
-    }
+    hideVictoryCard();
+    startReplay(puzzleNum);
 });
 
 document.getElementById('archiveModal').addEventListener('click', (e) => {
@@ -2129,5 +2226,6 @@ if (typeof module !== 'undefined' && module.exports) {
         SOLUTION_THRESHOLD_MEDIUM,
         EPOCH_DATE,
         PUZZLE_SEED_MULTIPLIER,
+        solve24Full,
     };
 }
