@@ -1859,6 +1859,34 @@ const REPLAY_HIGHLIGHT_MS = 400;
 const REPLAY_OP_MS = 350;
 const REPLAY_MERGE_MS = 450;
 
+// Generate fake merge+undo pairs for old games without full replay history.
+// Creates realistic-looking "wrong attempts" before the real solution steps.
+function generateFakePrelude(numbers, extraMoves) {
+    const sequence = [];
+    const pairs = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
+    const ops = ['+', '*', '-', '+', '*', '-'];
+    const numPairs = Math.floor(extraMoves / 2);
+
+    for (let p = 0; p < numPairs; p++) {
+        const [si, sj] = pairs[p % pairs.length];
+        const op = ops[p % ops.length];
+        const a = numbers[si];
+        const b = numbers[sj];
+        const result = calc(a, op, b);
+        if (result === null) continue;
+
+        const step = {
+            a: { value: a, slot: si },
+            op: op,
+            b: { value: b, slot: sj },
+            result: { value: result, slot: si }
+        };
+        sequence.push({ type: 'merge', ...step });
+        sequence.push({ type: 'undo', ...step });
+    }
+    return sequence;
+}
+
 function startReplay(puzzleNum) {
     const history = gameState.history[puzzleNum];
     const numbers = generatePuzzle(puzzleNum);
@@ -1866,15 +1894,21 @@ function startReplay(puzzleNum) {
     // Prefer replaySequence (includes undos), fall back to solutionSteps, then solve
     let steps = history?.replaySequence;
     if (!steps || steps.length === 0) {
-        steps = history?.solutionSteps;
-        if (steps && steps.length > 0) {
-            // Wrap old-format solutionSteps as merge-type entries
-            steps = steps.map(s => ({ type: 'merge', ...s }));
+        let solnSteps = history?.solutionSteps;
+        if (!solnSteps || solnSteps.length === 0) {
+            solnSteps = solve24Full(numbers);
+            if (!solnSteps) return;
+        }
+        const mergeSteps = solnSteps.map(s => ({ type: 'merge', ...s }));
+
+        // For old games with extra moves, generate fake merge+undo prelude
+        const totalMoves = history?.moves || solnSteps.length;
+        const extraMoves = totalMoves - solnSteps.length;
+        if (extraMoves >= 2) {
+            const prelude = generateFakePrelude(numbers, extraMoves);
+            steps = [...prelude, ...mergeSteps];
         } else {
-            // Compute a perfect solution
-            const solved = solve24Full(numbers);
-            if (!solved) return;
-            steps = solved.map(s => ({ type: 'merge', ...s }));
+            steps = mergeSteps;
         }
     }
 
