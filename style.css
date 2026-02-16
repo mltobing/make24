@@ -442,7 +442,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.3s, transform 0.2s, opacity 0.3s;
+    transition: color 0.1s, transform 0.1s, opacity 0.1s;
     margin-bottom: 24px;
     opacity: 0;
 }
@@ -519,7 +519,7 @@ body {
     font-weight: 700;
     color: #f1f5f9;
     cursor: pointer;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
     -webkit-user-select: none;
     user-select: none;
 }
@@ -549,7 +549,7 @@ body {
     width: 54px; height: 54px; border-radius: 50%;
     border: 2px solid #22d3ee; background: rgba(30, 41, 59, 0.95);
     color: #f1f5f9; font-size: 1.5rem; font-weight: 700;
-    cursor: pointer; transition: all 0.15s ease;
+    cursor: pointer; transition: all 0.1s ease;
     display: flex; align-items: center; justify-content: center;
 }
 .op-btn:hover { background: rgba(34, 211, 238, 0.2); transform: scale(1.1); }
@@ -1220,6 +1220,169 @@ body {
 }
 
 /* ============================================================
+   MORE MENU (replaces calendar + settings buttons)
+   ============================================================ */
+.more-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: color 0.1s, opacity 0.1s;
+    opacity: 0.6;
+    padding: 0;
+}
+.more-btn:hover { opacity: 1; color: #22d3ee; }
+.more-btn:active { transform: scale(0.9); }
+
+.more-menu {
+    position: absolute;
+    top: 48px;
+    right: 0;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 4px;
+    min-width: 160px;
+    z-index: 60;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.1s, transform 0.1s;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.more-menu.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.more-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: #f1f5f9;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.1s;
+}
+.more-menu-item:hover { background: rgba(255, 255, 255, 0.05); }
+.more-menu-item svg { color: #94a3b8; flex-shrink: 0; }
+
+/* ============================================================
+   CLIPBOARD TOAST
+   ============================================================ */
+.clipboard-toast {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 0.8125rem;
+    color: #f1f5f9;
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.clipboard-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================
+   FIRST-RUN HINT
+   ============================================================ */
+.first-run-hint {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(34, 211, 238, 0.08);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    text-align: center;
+    z-index: 15;
+    max-width: 320px;
+    display: none;
+}
+.first-run-hint.visible { display: block; }
+.first-run-dismiss {
+    display: inline-block;
+    margin-left: 12px;
+    background: none;
+    border: none;
+    color: #22d3ee;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ============================================================
+   DIFFICULTY CHIP (shown after solve)
+   ============================================================ */
+.difficulty-chip {
+    display: inline-block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.difficulty-chip.easy { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.difficulty-chip.medium { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.difficulty-chip.hard { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+/* ============================================================
+   FREEZE TOOLTIP
+   ============================================================ */
+.freeze-tooltip {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    z-index: 80;
+    max-width: 280px;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, transform 0.15s;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.freeze-tooltip.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
@@ -1231,5 +1394,10 @@ body {
     }
     .confetti {
         display: none !important;
+    }
+    /* Disable all transitions globally */
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
     }
 }

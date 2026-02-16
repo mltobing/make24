@@ -32,7 +32,7 @@ const STORAGE_KEY = 'make24_v5';
 const ARCHIVE_PAGE_SIZE = 30;
 const STREAK_FREEZE_INTERVAL = 7;
 const PERFECT_MOVES = 3;
-const HINT_DELAY_MS = 90000;        // 90 seconds before hint appears
+const HINT_DELAY_MS = 30000;         // 30 seconds before hint appears
 const HISTORY_SHARE_DAYS = 24;
 const FAST_SOLVE_THRESHOLD_S = 60;   // seconds for "fast" perfect
 const WRONG_ANSWER_RESET_MS = 800;   // delay before resetting wrong answer
@@ -1009,6 +1009,7 @@ function initPuzzle(puzzleNum, isArchive = false) {
                 streak: String(gameState.streak),
                 percentileText: ''
             });
+            addDifficultyChip(puzzleNum);
         }, ARCHIVE_WIN_MODAL_DELAY_MS);
         return;
     }
@@ -1052,6 +1053,7 @@ function initPuzzle(puzzleNum, isArchive = false) {
                 streak: String(gameState.streak),
                 percentileText: ''
             });
+            addDifficultyChip(puzzleNum);
         }, ARCHIVE_WIN_MODAL_DELAY_MS);
     } else if (!alreadySolved) {
         startHintTimer();
@@ -1329,6 +1331,7 @@ async function handleWin() {
             streak: String(gameState.streak),
             percentileText: ''
         });
+        addDifficultyChip(currentPuzzle.puzzleNum);
     }, WIN_MODAL_DELAY_MS);
 
     const percentileData = await trackPlay(true);
@@ -1427,8 +1430,16 @@ function share() {
 
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
-        alert('Copied to clipboard!');
-    }).catch(() => { alert(text); });
+        showToast('Copied to clipboard!');
+    }).catch(() => { showToast('Copied to clipboard!'); });
+}
+
+function showToast(message) {
+    const toast = document.getElementById('clipboardToast');
+    toast.textContent = message;
+    toast.classList.add('visible');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => toast.classList.remove('visible'), 2000);
 }
 
 // Archive
@@ -2011,6 +2022,7 @@ function showReplayVictoryCard() {
         streak: String(gameState.streak),
         percentileText: ''
     });
+    addDifficultyChip(puzzleNum);
 }
 
 function replayStepForward() {
@@ -2209,8 +2221,33 @@ function animatedUndo() {
     }
 }
 
-// Calendar button opens calendar view
-document.getElementById('calendarBtn').addEventListener('click', showCalendar);
+// More menu
+document.getElementById('moreBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('moreMenu').classList.toggle('show');
+});
+document.addEventListener('click', () => {
+    document.getElementById('moreMenu').classList.remove('show');
+});
+document.getElementById('menuCalendarBtn').addEventListener('click', () => {
+    document.getElementById('moreMenu').classList.remove('show');
+    showCalendar();
+});
+document.getElementById('menuSettingsBtn').addEventListener('click', () => {
+    document.getElementById('moreMenu').classList.remove('show');
+    document.getElementById('settingsModal').classList.add('show');
+});
+
+// Freeze tooltip on streak tap
+document.getElementById('streakDisplay').addEventListener('click', () => {
+    const tooltip = document.getElementById('freezeTooltip');
+    if (!tooltip) return;
+    tooltip.classList.add('visible');
+    clearTimeout(document.getElementById('streakDisplay')._tipTimer);
+    document.getElementById('streakDisplay')._tipTimer = setTimeout(() => tooltip.classList.remove('visible'), 3000);
+});
+
+// Calendar modal controls
 document.getElementById('closeCalendar').addEventListener('click', () => {
     document.getElementById('calendarModal').classList.remove('show');
 });
@@ -2274,16 +2311,40 @@ document.getElementById('archiveModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
 });
 
-// Settings modal
-document.getElementById('settingsBtn').addEventListener('click', () => {
-    document.getElementById('settingsModal').classList.add('show');
-});
+// Settings modal (menuSettingsBtn already wired above)
 document.getElementById('closeSettings').addEventListener('click', () => {
     document.getElementById('settingsModal').classList.remove('show');
 });
 document.getElementById('settingsModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
 });
+
+// ============================================================
+// FIRST-RUN HINT
+// ============================================================
+function maybeShowFirstRunHint() {
+    if (localStorage.getItem('make24_firstRun')) return;
+    const hint = document.getElementById('firstRunHint');
+    hint.classList.add('visible');
+    document.getElementById('firstRunDismiss').addEventListener('click', () => {
+        hint.classList.remove('visible');
+        localStorage.setItem('make24_firstRun', '1');
+    });
+}
+
+// ============================================================
+// DIFFICULTY CHIP (shown after solve in victory card)
+// ============================================================
+function addDifficultyChip(puzzleNum) {
+    const diff = getCachedDifficulty(puzzleNum);
+    const existing = document.querySelector('.difficulty-chip');
+    if (existing) existing.remove();
+    const chip = document.createElement('span');
+    chip.className = `difficulty-chip ${diff.level}`;
+    chip.textContent = diff.label;
+    const dateEl = document.getElementById('victoryDate');
+    dateEl.parentNode.insertBefore(chip, dateEl.nextSibling);
+}
 
 // ============================================================
 // BOOT (async to support auth)
@@ -2305,6 +2366,7 @@ async function boot() {
     updateStreak();
     reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
+    maybeShowFirstRunHint();
 
     // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
     bootComplete = true;
