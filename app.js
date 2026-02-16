@@ -1985,7 +1985,7 @@ function replayAutoStep() {
     replayState.timer = setTimeout(() => {
         replayStepForward();
         replayAutoStep();
-    }, delay);
+    }, REPLAY_STEP_MS);
 }
 
 function showReplayVictoryCard() {
