@@ -76,6 +76,7 @@ let playState = {
     cardStates: [],
     operatorHistory: [],
     solutionSteps: [],   // [{a:{value,slot}, op, b:{value,slot}, result:{value,slot}}]
+    replaySequence: [],  // full replay: {type:'merge',...step} or {type:'undo',...step}
     undoCount: 0,
     startTime: null,
     endTime: null,
@@ -1091,6 +1092,7 @@ function resetPlay() {
     playState.cardStates = [];
     playState.operatorHistory = [];
     playState.solutionSteps = [];
+    playState.replaySequence = [];
     playState.undoCount = 0;
     playState.startTime = null;
     playState.endTime = null;
@@ -1192,12 +1194,14 @@ function applyOperation(op) {
     const slotA = playState.cards[i].slot;
     const slotB = playState.cards[j].slot;
     const targetSlot = slotA; // result goes to first card's slot
-    playState.solutionSteps.push({
+    const stepRecord = {
         a: { value: a, slot: slotA },
         op: op,
         b: { value: b, slot: slotB },
         result: { value: result, slot: targetSlot }
-    });
+    };
+    playState.solutionSteps.push(stepRecord);
+    playState.replaySequence.push({ type: 'merge', ...stepRecord });
 
     playState.operatorHistory.push(op);
     playState.cards[i].used = true;
@@ -1218,6 +1222,11 @@ function applyOperation(op) {
 
 function undo() {
     if (playState.cardStates.length === 0 || playState.completed) return;
+
+    const lastStep = playState.solutionSteps[playState.solutionSteps.length - 1];
+    if (lastStep) {
+        playState.replaySequence.push({ type: 'undo', ...lastStep });
+    }
 
     const prevState = playState.cardStates.pop();
     playState.cards = prevState.cards;
@@ -1285,6 +1294,7 @@ async function handleWin() {
             moves: playState.moves,
             operators: [...playState.operatorHistory],
             solutionSteps: JSON.parse(JSON.stringify(playState.solutionSteps)),
+            replaySequence: JSON.parse(JSON.stringify(playState.replaySequence)),
             undos: playState.undoCount,
             solveTime: solveTime,
             hinted: playState.hinted
@@ -1848,16 +1858,25 @@ const REPLAY_STEP_MS = 1400;
 const REPLAY_HIGHLIGHT_MS = 400;
 const REPLAY_OP_MS = 350;
 const REPLAY_MERGE_MS = 450;
+const REPLAY_UNDO_MS = 1000;  // shorter timing for undo steps
 
 function startReplay(puzzleNum) {
     const history = gameState.history[puzzleNum];
     const numbers = generatePuzzle(puzzleNum);
 
-    let steps = history?.solutionSteps;
+    // Prefer replaySequence (includes undos), fall back to solutionSteps, then solve
+    let steps = history?.replaySequence;
     if (!steps || steps.length === 0) {
-        // No recorded steps — compute a perfect solution
-        steps = solve24Full(numbers);
-        if (!steps) return;
+        steps = history?.solutionSteps;
+        if (steps && steps.length > 0) {
+            // Wrap old-format solutionSteps as merge-type entries
+            steps = steps.map(s => ({ type: 'merge', ...s }));
+        } else {
+            // Compute a perfect solution
+            const solved = solve24Full(numbers);
+            if (!solved) return;
+            steps = solved.map(s => ({ type: 'merge', ...s }));
+        }
     }
 
     replayState.steps = steps;
@@ -1919,9 +1938,12 @@ function renderReplayCards() {
 function replayAutoStep() {
     if (!replayState.playing) return;
     if (replayState.currentStep >= replayState.steps.length - 1) {
-        // Replay complete — wait for last merge animation, then show victory
+        // Replay complete — wait for last animation, then show victory
         replayState.playing = false;
-        const lastStepAnimTime = REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS + 300;
+        const lastStep = replayState.steps[replayState.steps.length - 1];
+        const lastStepAnimTime = lastStep?.type === 'undo'
+            ? 300
+            : REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS + 300;
         setTimeout(() => {
             closeReplay();
             showConfetti();
@@ -1929,10 +1951,15 @@ function replayAutoStep() {
         }, lastStepAnimTime);
         return;
     }
+
+    // Determine delay based on next step type
+    const nextStep = replayState.steps[replayState.currentStep + 1];
+    const delay = nextStep?.type === 'undo' ? REPLAY_UNDO_MS : REPLAY_STEP_MS;
+
     replayState.timer = setTimeout(() => {
         replayStepForward();
         replayAutoStep();
-    }, REPLAY_STEP_MS);
+    }, delay);
 }
 
 function showReplayVictoryCard() {
@@ -1964,6 +1991,15 @@ function replayStepForward() {
     if (replayState.currentStep >= replayState.steps.length - 1) return;
     replayState.currentStep++;
     const step = replayState.steps[replayState.currentStep];
+
+    if (step.type === 'undo') {
+        replayUndoStep(step);
+    } else {
+        replayMergeStep(step);
+    }
+}
+
+function replayMergeStep(step) {
     const opSymbols = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
 
     // Highlight the two source cards
@@ -2009,40 +2045,94 @@ function replayStepForward() {
     }, REPLAY_HIGHLIGHT_MS + REPLAY_OP_MS + REPLAY_MERGE_MS);
 }
 
+function replayUndoStep(step) {
+    const opSymbols = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
+
+    // Briefly flash the operator that's being undone
+    const opDisplay = document.getElementById('replayOpDisplay');
+    opDisplay.textContent = opSymbols[step.op] || step.op;
+    opDisplay.classList.add('visible');
+
+    // Add puff/smoke to the result card that will disappear
+    const resultSlot = document.getElementById(`rslot${step.result.slot}`);
+    const resultCard = resultSlot?.querySelector('.replay-card');
+    if (resultCard) resultCard.classList.add('replay-puff');
+
+    // After puff animation: reverse the merge state and show restored cards
+    setTimeout(() => {
+        opDisplay.classList.remove('visible');
+
+        // Remove the result card from state
+        const resultIdx = replayState.cards.findIndex(c =>
+            c.slot === step.result.slot && !c.used && c.value === step.result.value);
+        if (resultIdx >= 0) replayState.cards.splice(resultIdx, 1);
+
+        // Restore source cards
+        for (let i = replayState.cards.length - 1; i >= 0; i--) {
+            if (replayState.cards[i].used && replayState.cards[i].slot === step.b.slot &&
+                replayState.cards[i].value === step.b.value) {
+                replayState.cards[i].used = false;
+                break;
+            }
+        }
+        for (let i = replayState.cards.length - 1; i >= 0; i--) {
+            if (replayState.cards[i].used && replayState.cards[i].slot === step.a.slot &&
+                replayState.cards[i].value === step.a.value) {
+                replayState.cards[i].used = false;
+                break;
+            }
+        }
+
+        renderReplayCards();
+
+        // Appear animation on restored cards
+        const slotAEl = document.getElementById(`rslot${step.a.slot}`);
+        const slotBEl = document.getElementById(`rslot${step.b.slot}`);
+        const cardA = slotAEl?.querySelector('.replay-card');
+        const cardB = slotBEl?.querySelector('.replay-card');
+        if (cardA) cardA.classList.add('appearing');
+        if (cardB) cardB.classList.add('appearing');
+
+        // Update move dots
+        updateReplayDots(replayState.currentStep + 1, replayState.totalMoves);
+    }, 500);
+}
+
 function replayStepBack() {
+    // Manual step back not used during auto-play but kept for consistency
     if (replayState.currentStep < 0) return;
 
     const step = replayState.steps[replayState.currentStep];
     replayState.currentStep--;
 
-    // Remove the result card and restore source cards
-    const resultIdx = replayState.cards.findIndex(c => c.slot === step.result.slot && !c.used && c.value === step.result.value);
-    if (resultIdx >= 0) replayState.cards.splice(resultIdx, 1);
+    if (step.type === 'undo') {
+        // Stepping back from an undo = re-apply the merge
+        const idxA = replayState.cards.findIndex(c => c.slot === step.a.slot && !c.used);
+        const idxB = replayState.cards.findIndex(c => c.slot === step.b.slot && !c.used);
+        if (idxA >= 0) replayState.cards[idxA].used = true;
+        if (idxB >= 0) replayState.cards[idxB].used = true;
+        replayState.cards.push({ value: step.result.value, slot: step.result.slot, used: false });
+    } else {
+        // Stepping back from a merge = reverse it
+        const resultIdx = replayState.cards.findIndex(c => c.slot === step.result.slot && !c.used && c.value === step.result.value);
+        if (resultIdx >= 0) replayState.cards.splice(resultIdx, 1);
 
-    // Un-use source cards (find most recently used ones matching)
-    for (let i = replayState.cards.length - 1; i >= 0; i--) {
-        if (replayState.cards[i].used && replayState.cards[i].slot === step.b.slot && replayState.cards[i].value === step.b.value) {
-            replayState.cards[i].used = false;
-            break;
+        for (let i = replayState.cards.length - 1; i >= 0; i--) {
+            if (replayState.cards[i].used && replayState.cards[i].slot === step.b.slot && replayState.cards[i].value === step.b.value) {
+                replayState.cards[i].used = false;
+                break;
+            }
         }
-    }
-    for (let i = replayState.cards.length - 1; i >= 0; i--) {
-        if (replayState.cards[i].used && replayState.cards[i].slot === step.a.slot && replayState.cards[i].value === step.a.value) {
-            replayState.cards[i].used = false;
-            break;
+        for (let i = replayState.cards.length - 1; i >= 0; i--) {
+            if (replayState.cards[i].used && replayState.cards[i].slot === step.a.slot && replayState.cards[i].value === step.a.value) {
+                replayState.cards[i].used = false;
+                break;
+            }
         }
     }
 
     renderReplayCards();
     document.getElementById('replayOpDisplay').classList.remove('visible');
-
-    // Add appear animation to restored cards
-    const slotA = document.getElementById(`rslot${step.a.slot}`);
-    const slotB = document.getElementById(`rslot${step.b.slot}`);
-    const cardA = slotA?.querySelector('.replay-card');
-    const cardB = slotB?.querySelector('.replay-card');
-    if (cardA) cardA.classList.add('appearing');
-    if (cardB) cardB.classList.add('appearing');
 }
 
 function closeReplay() {
@@ -2063,6 +2153,11 @@ function animatedUndo() {
     // Get the merged card slot before undo
     const lastStep = playState.solutionSteps[playState.solutionSteps.length - 1];
     const mergedSlot = lastStep ? lastStep.result.slot : null;
+
+    // Record undo in replay sequence (the step being undone)
+    if (lastStep) {
+        playState.replaySequence.push({ type: 'undo', ...lastStep });
+    }
 
     const prevState = playState.cardStates.pop();
     playState.cards = prevState.cards;
