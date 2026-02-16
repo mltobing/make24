@@ -1278,7 +1278,7 @@ async function handleWin() {
             time: formatTimeHuman(solveTime),
             moves: String(playState.moves),
             streak: String(gameState.streak),
-            percentileText: 'Loading...'
+            percentileText: ''
         });
     }, WIN_MODAL_DELAY_MS);
 
@@ -1319,11 +1319,13 @@ function updateMoveDots() {
 
 function updateUI() {
     document.getElementById('puzzleDate').textContent = formatPuzzleDate(currentPuzzle.puzzleNum);
+    const dateEl = document.getElementById('puzzleDate');
     const banner = document.getElementById('archiveBanner');
     if (currentPuzzle.isArchive) {
-        banner.textContent = formatPuzzleDate(currentPuzzle.puzzleNum);
-        banner.classList.add('show');
+        dateEl.classList.add('archive');
+        banner.classList.remove('show');
     } else {
+        dateEl.classList.remove('archive');
         banner.classList.remove('show');
     }
     updateStreakDisplay();
@@ -1803,10 +1805,10 @@ let replayState = {
     cards: []   // current card state: [{value, slot, used}]
 };
 
-const REPLAY_STEP_MS = 900;
-const REPLAY_HIGHLIGHT_MS = 300;
-const REPLAY_OP_MS = 250;
-const REPLAY_MERGE_MS = 350;
+const REPLAY_STEP_MS = 1400;
+const REPLAY_HIGHLIGHT_MS = 400;
+const REPLAY_OP_MS = 350;
+const REPLAY_MERGE_MS = 450;
 
 function startReplay(puzzleNum) {
     const history = gameState.history[puzzleNum];
@@ -1823,15 +1825,13 @@ function startReplay(puzzleNum) {
     renderReplayCards();
     document.getElementById('replayOpDisplay').classList.remove('visible');
     document.getElementById('replayOpDisplay').textContent = '';
-    document.getElementById('replayPlayPause').textContent = '\u25B6';
     document.getElementById('replayOverlay').classList.add('show');
 
     // Auto-play after a short delay
     setTimeout(() => {
         replayState.playing = true;
-        document.getElementById('replayPlayPause').textContent = '\u23F8';
         replayAutoStep();
-    }, 500);
+    }, 600);
 }
 
 function renderReplayCards() {
@@ -1853,7 +1853,6 @@ function replayAutoStep() {
     if (replayState.currentStep >= replayState.steps.length - 1) {
         // Replay complete
         replayState.playing = false;
-        document.getElementById('replayPlayPause').textContent = '\u25B6';
         showConfetti();
         return;
     }
@@ -1951,23 +1950,6 @@ function closeReplay() {
     document.getElementById('replayOverlay').classList.remove('show');
 }
 
-function toggleReplayPlayPause() {
-    if (replayState.playing) {
-        replayState.playing = false;
-        if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
-        document.getElementById('replayPlayPause').textContent = '\u25B6';
-    } else {
-        if (replayState.currentStep >= replayState.steps.length - 1) {
-            // Reset to start
-            replayState.currentStep = -1;
-            replayState.cards = replayState.numbers.map((v, i) => ({ value: v, slot: i, used: false }));
-            renderReplayCards();
-        }
-        replayState.playing = true;
-        document.getElementById('replayPlayPause').textContent = '\u23F8';
-        replayAutoStep();
-    }
-}
 
 // ============================================================
 // ANIMATED UNDO (live play)
@@ -2031,20 +2013,7 @@ document.getElementById('detailsModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
 });
 
-// Replay controls
-document.getElementById('replayPlayPause').addEventListener('click', toggleReplayPlayPause);
-document.getElementById('replayStepBack').addEventListener('click', () => {
-    replayState.playing = false;
-    if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
-    document.getElementById('replayPlayPause').textContent = '\u25B6';
-    replayStepBack();
-});
-document.getElementById('replayStepFwd').addEventListener('click', () => {
-    replayState.playing = false;
-    if (replayState.timer) { clearTimeout(replayState.timer); replayState.timer = null; }
-    document.getElementById('replayPlayPause').textContent = '\u25B6';
-    replayStepForward();
-});
+// Replay close button
 document.getElementById('replayCloseBtn').addEventListener('click', closeReplay);
 
 // Keep old archive modal functional via close button
