@@ -1315,6 +1315,9 @@ async function handleWin() {
         return;
     }
 
+    // User played a real game — dismiss the tutorial ? if still showing
+    hideTutorialHelpBtn();
+
     const solveTime = playState.startTime ?
         Math.round((playState.endTime - playState.startTime) / 1000) : 0;
 
@@ -2493,15 +2496,29 @@ const TUTORIAL_STEPS = [
     { action: 'selectOp', targetOp: '*', tooltip: 'Choose <span class="tutorial-highlight">&times;</span> to make 24!' },
 ];
 
-function shouldShowTutorial() {
+function shouldShowTutorialHint() {
     if (localStorage.getItem('make24_tutorial')) return false;
-    // Show tutorial if user has no history at all
+    // Show the ? for users with no history
     return Object.keys(gameState.history).length === 0;
+}
+
+function showTutorialHelpBtn() {
+    document.getElementById('tutorialHelpBtn').classList.add('visible');
+}
+
+function hideTutorialHelpBtn() {
+    document.getElementById('tutorialHelpBtn').classList.remove('visible');
+    localStorage.setItem('make24_tutorial', '1');
 }
 
 function startTutorial() {
     tutorialActive = true;
     tutorialStep = 0;
+
+    // Hide the ? icon and any active victory card
+    document.getElementById('tutorialHelpBtn').classList.remove('visible');
+    hideVictoryCard();
+    clearWinState();
 
     // Override current puzzle with tutorial puzzle
     currentPuzzle.puzzleNum = 0; // sentinel: not a real puzzle
@@ -2607,7 +2624,7 @@ function tutorialCheckAction(action, detail) {
 function endTutorial() {
     tutorialActive = false;
     tutorialStep = 0;
-    localStorage.setItem('make24_tutorial', '1');
+    hideTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
     clearTutorialHighlights();
@@ -2618,15 +2635,22 @@ function endTutorial() {
 
 function skipTutorial() {
     tutorialActive = false;
-    localStorage.setItem('make24_tutorial', '1');
+    hideTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
     clearTutorialHighlights();
     initPuzzle(getTodayPuzzleNumber(), false);
 }
 
-// Wire skip button
+// Wire tutorial buttons
 document.getElementById('tutorialSkip').addEventListener('click', skipTutorial);
+document.getElementById('tutorialHelpBtn').addEventListener('click', () => {
+    startTutorial();
+});
+document.getElementById('menuTutorialBtn').addEventListener('click', () => {
+    document.getElementById('moreMenu').classList.remove('show');
+    startTutorial();
+});
 
 // ============================================================
 // DIFFICULTY CHIP (shown after solve in victory card)
@@ -2663,9 +2687,9 @@ async function boot() {
     reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
 
-    // Show guided tutorial for first-time users
-    if (shouldShowTutorial()) {
-        startTutorial();
+    // Show subtle ? for first-time users (tutorial is opt-in)
+    if (shouldShowTutorialHint()) {
+        showTutorialHelpBtn();
     }
 
     // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
