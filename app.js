@@ -181,7 +181,7 @@ function findHintForPuzzle(numbers) {
                     const remaining = numbers.filter((_, idx) => idx !== i && idx !== j);
                     remaining.push(r);
                     if (canMake24From3(remaining)) {
-                        return `Try ${a} ${opSymbols[op]} ${b}`;
+                        return `${a} ${opSymbols[op]} ${b}`;
                     }
                 }
             }
@@ -860,8 +860,16 @@ function formatPuzzleDate(puzzleNum) {
     if (puzzleNum === today) return 'Today';
     if (puzzleNum === today - 1) return 'Yesterday';
     const d = getDateFromPuzzleNumber(puzzleNum);
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return `${months[d.getUTCMonth()]} ${d.getUTCDate()}`;
+    // Use the user's locale for short date with 2-digit year
+    try {
+        const locale = navigator.language || 'en';
+        return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: '2-digit', timeZone: 'UTC' });
+    } catch (e) {
+        // Fallback for environments without Intl (e.g. tests)
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const yr = String(d.getUTCFullYear()).slice(-2);
+        return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, '${yr}`;
+    }
 }
 
 function formatPuzzleDateLong(puzzleNum) {
@@ -1524,11 +1532,19 @@ function showArchive() {
 // ============================================================
 let calendarViewYear = null;
 let calendarViewMonth = null; // 0-indexed
+let calendarLastSelectedYear = null;
+let calendarLastSelectedMonth = null;
 
 function showCalendar() {
-    const now = new Date();
-    calendarViewYear = now.getUTCFullYear();
-    calendarViewMonth = now.getUTCMonth();
+    // If user previously navigated to a specific month, return there instead of current month
+    if (calendarLastSelectedYear !== null) {
+        calendarViewYear = calendarLastSelectedYear;
+        calendarViewMonth = calendarLastSelectedMonth;
+    } else {
+        const now = new Date();
+        calendarViewYear = now.getFullYear();
+        calendarViewMonth = now.getMonth();
+    }
     renderCalendar();
     document.getElementById('calendarModal').classList.add('show');
 }
@@ -1617,6 +1633,9 @@ function renderCalendar() {
 
         // Tap: today loads puzzle, solved past days replay, unsolved past days load for play
         cell.addEventListener('click', () => {
+            // Remember which month the user was browsing
+            calendarLastSelectedYear = calendarViewYear;
+            calendarLastSelectedMonth = calendarViewMonth;
             document.getElementById('calendarModal').classList.remove('show');
             if (puzzleNum === today) {
                 initPuzzle(puzzleNum, false);
@@ -1742,8 +1761,11 @@ async function requestMotionPermission() {
             if (response === 'granted') {
                 window.addEventListener('devicemotion', handleMotion);
                 shakeEnabled = true;
+                localStorage.removeItem('make24_motionDenied');
                 return true;
             }
+            // User denied — remember so we don't ask again next page load
+            localStorage.setItem('make24_motionDenied', '1');
             return false;
         } else if ('DeviceMotionEvent' in window) {
             window.addEventListener('devicemotion', handleMotion);
@@ -1756,10 +1778,14 @@ async function requestMotionPermission() {
 
 let motionPermissionRequested = false;
 function maybeRequestMotion() {
-    if (!motionPermissionRequested && 'DeviceMotionEvent' in window) {
-        motionPermissionRequested = true;
-        requestMotionPermission();
-    }
+    // On iOS, DeviceMotionEvent.requestPermission() triggers a browser prompt every time
+    // unless user has toggled "always allow" in Safari settings. Only ask once per page load,
+    // and skip entirely if user previously denied (stored in localStorage).
+    if (motionPermissionRequested || shakeEnabled) return;
+    if (!('DeviceMotionEvent' in window)) return;
+    if (localStorage.getItem('make24_motionDenied') === '1') return;
+    motionPermissionRequested = true;
+    requestMotionPermission();
 }
 
 // ============================================================
@@ -2257,6 +2283,12 @@ document.addEventListener('click', () => {
 });
 document.getElementById('menuCalendarBtn').addEventListener('click', () => {
     document.getElementById('moreMenu').classList.remove('show');
+    showCalendar();
+});
+
+// Tap the date label to open the calendar directly
+document.getElementById('puzzleDate').addEventListener('click', () => {
+    if (tutorialActive) return;
     showCalendar();
 });
 document.getElementById('menuSettingsBtn').addEventListener('click', () => {

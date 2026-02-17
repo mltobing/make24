@@ -142,12 +142,13 @@ describe('findHintForPuzzle', () => {
     test('returns a hint string for solvable puzzles', () => {
         const hint = game.findHintForPuzzle([1, 2, 3, 4]);
         expect(hint).toBeTruthy();
-        expect(hint.startsWith('Try ')).toBe(true);
+        expect(typeof hint).toBe('string');
+        expect(hint.length).toBeGreaterThan(0);
     });
     test('hint contains two numbers and an operator', () => {
         const hint = game.findHintForPuzzle([1, 2, 3, 4]);
-        // Format: "Try A op B"
-        expect(hint).toMatch(/^Try \d+ [+\u2212\u00D7\u00F7] \d+$/);
+        // Format: "A op B" (e.g. "1 + 2")
+        expect(hint).toMatch(/^\d+ [+\u2212\u00D7\u00F7] \d+$/);
     });
 });
 
@@ -212,7 +213,11 @@ describe('formatPuzzleDate', () => {
         expect(game.formatPuzzleDate(today - 1)).toBe('Yesterday');
     });
     test('returns "Jan 1" for puzzle 1 (epoch)', () => {
-        expect(game.formatPuzzleDate(1)).toBe('Jan 1');
+        // Includes 2-digit year now; fallback format in Node: "Jan 1, '25"
+        const result = game.formatPuzzleDate(1);
+        expect(result).toContain('Jan');
+        expect(result).toContain('1');
+        expect(result).toMatch(/25/); // year 2025 epoch
     });
 });
 
