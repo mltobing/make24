@@ -1306,35 +1306,78 @@ body {
 }
 
 /* ============================================================
-   FIRST-RUN HINT
+   TUTORIAL
    ============================================================ */
-.first-run-hint {
+.tutorial-tooltip {
     position: fixed;
-    bottom: 60px;
+    bottom: 70px;
     left: 50%;
-    transform: translateX(-50%);
-    background: rgba(34, 211, 238, 0.08);
-    border: 1px solid rgba(34, 211, 238, 0.2);
-    border-radius: 10px;
-    padding: 10px 16px;
-    font-size: 0.8125rem;
-    color: #94a3b8;
+    transform: translateX(-50%) translateY(8px);
+    background: #1e293b;
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    color: #f1f5f9;
     text-align: center;
-    z-index: 15;
+    z-index: 500;
     max-width: 320px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+.tutorial-tooltip.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+.tutorial-tooltip .tutorial-highlight {
+    color: #22d3ee;
+    font-weight: 600;
+}
+
+/* Tutorial mode: dim non-target elements */
+.tutorial-dim {
+    opacity: 0.3 !important;
+    pointer-events: none !important;
+}
+
+/* Tutorial mode: pulse target card */
+.tutorial-target {
+    animation: tutorial-pulse 1s ease-in-out infinite;
+    z-index: 10;
+    position: relative;
+}
+@keyframes tutorial-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); }
+    50% { box-shadow: 0 0 20px 4px rgba(34, 211, 238, 0.5); }
+}
+
+/* Tutorial banner at top */
+.tutorial-banner {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: rgba(34, 211, 238, 0.08);
+    border-bottom: 1px solid rgba(34, 211, 238, 0.15);
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    z-index: 500;
     display: none;
 }
-.first-run-hint.visible { display: block; }
-.first-run-dismiss {
-    display: inline-block;
-    margin-left: 12px;
+.tutorial-banner.visible { display: block; }
+.tutorial-banner .tutorial-skip {
+    color: #22d3ee;
     background: none;
     border: none;
-    color: #22d3ee;
     font-family: 'DM Sans', sans-serif;
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
+    margin-left: 12px;
 }
 
 /* ============================================================

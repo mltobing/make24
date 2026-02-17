@@ -619,7 +619,9 @@ function computeStreakFromHistory() {
     const today = getTodayPuzzleNumber();
     let streak = 0;
     for (let num = today; num >= 1; num--) {
-        if (gameState.history[num]?.completed) {
+        const entry = gameState.history[num];
+        // Only count puzzles solved on their actual day (not retroactively filled)
+        if (entry?.completed && entry.solvedOnTime !== false) {
             streak++;
         } else {
             break;
@@ -1146,6 +1148,12 @@ function selectCard(index) {
     if (playState.completed) return;
     if (playState.cards[index].used) return;
 
+    // Tutorial gate: only allow the correct card
+    if (tutorialActive) {
+        const cardValue = playState.cards[index].value;
+        if (!tutorialCheckAction('selectCard', { value: cardValue })) return;
+    }
+
     const pos = playState.selected.indexOf(index);
     if (pos !== -1) {
         playState.selected.splice(pos, 1);
@@ -1164,6 +1172,11 @@ function hideOperators() { document.getElementById('operatorsOverlay').classList
 
 function applyOperation(op) {
     if (playState.selected.length !== 2 || playState.completed) return;
+
+    // Tutorial gate: only allow the correct operator
+    if (tutorialActive) {
+        if (!tutorialCheckAction('selectOp', { op })) return;
+    }
 
     const [i, j] = playState.selected;
     const a = playState.cards[i].value;
@@ -1284,6 +1297,17 @@ async function handleWin() {
     playState.completed = true;
     playState.endTime = Date.now();
 
+    // Tutorial mode: show success and load today's puzzle
+    if (tutorialActive) {
+        clearTutorialHighlights();
+        const tooltip = document.getElementById('tutorialTooltip');
+        tooltip.innerHTML = 'You got it! Loading today\'s puzzle...';
+        tooltip.classList.add('visible');
+        showConfetti();
+        setTimeout(() => endTutorial(), 2000);
+        return;
+    }
+
     const solveTime = playState.startTime ?
         Math.round((playState.endTime - playState.startTime) / 1000) : 0;
 
@@ -1293,6 +1317,7 @@ async function handleWin() {
     if (canUpgradeResult(currentPuzzle.puzzleNum)) {
         gameState.history[currentPuzzle.puzzleNum] = {
             completed: true,
+            solvedOnTime: !currentPuzzle.isArchive,
             moves: playState.moves,
             operators: [...playState.operatorHistory],
             solutionSteps: JSON.parse(JSON.stringify(playState.solutionSteps)),
@@ -2186,6 +2211,7 @@ function closeReplay() {
 // ANIMATED UNDO (live play)
 // ============================================================
 function animatedUndo() {
+    if (tutorialActive) return; // no undo during tutorial
     if (playState.cardStates.length === 0 || playState.completed) return;
 
     // Get the merged card slot before undo
@@ -2320,17 +2346,168 @@ document.getElementById('settingsModal').addEventListener('click', (e) => {
 });
 
 // ============================================================
-// FIRST-RUN HINT
+// GUIDED TUTORIAL (first-time users)
 // ============================================================
-function maybeShowFirstRunHint() {
-    if (localStorage.getItem('make24_firstRun')) return;
-    const hint = document.getElementById('firstRunHint');
-    hint.classList.add('visible');
-    document.getElementById('firstRunDismiss').addEventListener('click', () => {
-        hint.classList.remove('visible');
-        localStorage.setItem('make24_firstRun', '1');
+let tutorialActive = false;
+let tutorialStep = 0;
+
+// Tutorial puzzle: [1, 2, 3, 4] → 1×2=2, 2×3=6, 6×4=24
+const TUTORIAL_NUMBERS = [1, 2, 3, 4];
+const TUTORIAL_STEPS = [
+    // Step 0: tap first number
+    { action: 'selectCard', targetValue: 1, tooltip: 'Tap the <span class="tutorial-highlight">1</span> card' },
+    // Step 1: tap second number
+    { action: 'selectCard', targetValue: 2, tooltip: 'Now tap the <span class="tutorial-highlight">2</span> card' },
+    // Step 2: pick operator
+    { action: 'selectOp', targetOp: '*', tooltip: 'Choose <span class="tutorial-highlight">&times;</span> to multiply them' },
+    // Step 3: tap result card (2)
+    { action: 'selectCard', targetValue: 2, tooltip: 'Tap the <span class="tutorial-highlight">2</span> card (the result)' },
+    // Step 4: tap 3
+    { action: 'selectCard', targetValue: 3, tooltip: 'Now tap <span class="tutorial-highlight">3</span>' },
+    // Step 5: multiply again
+    { action: 'selectOp', targetOp: '*', tooltip: 'Choose <span class="tutorial-highlight">&times;</span> again' },
+    // Step 6: tap result card (6)
+    { action: 'selectCard', targetValue: 6, tooltip: 'Tap the <span class="tutorial-highlight">6</span>' },
+    // Step 7: tap 4
+    { action: 'selectCard', targetValue: 4, tooltip: 'And finally tap <span class="tutorial-highlight">4</span>' },
+    // Step 8: multiply for 24
+    { action: 'selectOp', targetOp: '*', tooltip: 'Choose <span class="tutorial-highlight">&times;</span> to make 24!' },
+];
+
+function shouldShowTutorial() {
+    if (localStorage.getItem('make24_tutorial')) return false;
+    // Show tutorial if user has no history at all
+    return Object.keys(gameState.history).length === 0;
+}
+
+function startTutorial() {
+    tutorialActive = true;
+    tutorialStep = 0;
+
+    // Override current puzzle with tutorial puzzle
+    currentPuzzle.puzzleNum = 0; // sentinel: not a real puzzle
+    currentPuzzle.numbers = [...TUTORIAL_NUMBERS];
+    currentPuzzle.isArchive = true; // prevents streak counting
+    currentPuzzle.date = null;
+
+    playState.moves = 0;
+    playState.completed = false;
+    playState.cards = TUTORIAL_NUMBERS.map((v, i) => ({ value: v, used: false, slot: i }));
+    playState.selected = [];
+    playState.cardStates = [];
+    playState.operatorHistory = [];
+    playState.solutionSteps = [];
+    playState.replaySequence = [];
+    playState.undoCount = 0;
+    playState.startTime = null;
+    playState.endTime = null;
+    playState.hinted = false;
+
+    document.getElementById('puzzleDate').textContent = 'Practice';
+    document.getElementById('tutorialBanner').classList.add('visible');
+
+    renderCards();
+    hideOperators();
+    updateResult();
+    updateMoveDots();
+    showTutorialStep();
+}
+
+function showTutorialStep() {
+    if (!tutorialActive) return;
+    const tooltip = document.getElementById('tutorialTooltip');
+    if (tutorialStep >= TUTORIAL_STEPS.length) {
+        tooltip.classList.remove('visible');
+        return;
+    }
+    const step = TUTORIAL_STEPS[tutorialStep];
+    tooltip.innerHTML = step.tooltip;
+    tooltip.classList.add('visible');
+
+    // Highlight target cards
+    clearTutorialHighlights();
+    if (step.action === 'selectCard') {
+        highlightTutorialCard(step.targetValue);
+    } else if (step.action === 'selectOp') {
+        highlightTutorialOp(step.targetOp);
+    }
+}
+
+function clearTutorialHighlights() {
+    document.querySelectorAll('.tutorial-target').forEach(el => el.classList.remove('tutorial-target'));
+    document.querySelectorAll('.tutorial-dim').forEach(el => el.classList.remove('tutorial-dim'));
+}
+
+function highlightTutorialCard(value) {
+    const cards = document.querySelectorAll('.card');
+    cards.forEach(card => {
+        if (parseFloat(card.textContent) === value && !card.classList.contains('used')) {
+            card.classList.add('tutorial-target');
+        } else {
+            card.classList.add('tutorial-dim');
+        }
     });
 }
+
+function highlightTutorialOp(op) {
+    const opMap = { '+': '+', '-': '-', '*': '*', '/': '/' };
+    document.querySelectorAll('.op-btn').forEach(btn => {
+        if (btn.dataset.op === op) {
+            btn.classList.add('tutorial-target');
+        } else {
+            btn.classList.add('tutorial-dim');
+        }
+    });
+}
+
+// Check if the user's action matches the tutorial step
+function tutorialCheckAction(action, detail) {
+    if (!tutorialActive || tutorialStep >= TUTORIAL_STEPS.length) return true; // not in tutorial
+    const step = TUTORIAL_STEPS[tutorialStep];
+    if (step.action === 'selectCard' && action === 'selectCard') {
+        // Check if the card value matches
+        if (detail.value === step.targetValue) {
+            tutorialStep++;
+            // After a brief delay, show next step
+            setTimeout(() => showTutorialStep(), 150);
+            return true;
+        }
+        return false; // wrong card
+    }
+    if (step.action === 'selectOp' && action === 'selectOp') {
+        if (detail.op === step.targetOp) {
+            tutorialStep++;
+            setTimeout(() => showTutorialStep(), 150);
+            return true;
+        }
+        return false; // wrong op
+    }
+    return false;
+}
+
+function endTutorial() {
+    tutorialActive = false;
+    tutorialStep = 0;
+    localStorage.setItem('make24_tutorial', '1');
+    document.getElementById('tutorialBanner').classList.remove('visible');
+    document.getElementById('tutorialTooltip').classList.remove('visible');
+    clearTutorialHighlights();
+
+    // Load today's real puzzle
+    initPuzzle(getTodayPuzzleNumber(), false);
+}
+
+function skipTutorial() {
+    tutorialActive = false;
+    localStorage.setItem('make24_tutorial', '1');
+    document.getElementById('tutorialBanner').classList.remove('visible');
+    document.getElementById('tutorialTooltip').classList.remove('visible');
+    clearTutorialHighlights();
+    initPuzzle(getTodayPuzzleNumber(), false);
+}
+
+// Wire skip button
+document.getElementById('tutorialSkip').addEventListener('click', skipTutorial);
 
 // ============================================================
 // DIFFICULTY CHIP (shown after solve in victory card)
@@ -2366,7 +2543,11 @@ async function boot() {
     updateStreak();
     reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
-    maybeShowFirstRunHint();
+
+    // Show guided tutorial for first-time users
+    if (shouldShowTutorial()) {
+        startTutorial();
+    }
 
     // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
     bootComplete = true;
