@@ -161,6 +161,18 @@
     <div class="modal-overlay" id="settingsModal">
         <div class="modal">
             <h2>Settings</h2>
+            <!-- Shake to undo setting -->
+            <div class="setting-row" id="shakeSettingRow">
+                <div class="setting-info">
+                    <span class="setting-label">Shake to undo</span>
+                    <span class="setting-desc" id="shakeDesc">Shake your phone to undo the last move</span>
+                </div>
+                <button class="setting-toggle" id="shakeToggle" role="switch" aria-checked="false" aria-label="Shake to undo">
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </button>
+            </div>
+            <div class="shake-guidance" id="shakeGuidance"></div>
+
             <div class="sync-section" id="syncSection">
                 <div class="sync-label" id="syncLabel">Keep your streak across devices</div>
                 <div class="sync-methods" id="syncMethods">

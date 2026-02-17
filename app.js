@@ -1172,7 +1172,6 @@ function selectCard(index) {
     }
 
     renderCards();
-    maybeRequestMotion();
 }
 
 function showOperators() { document.getElementById('operatorsOverlay').classList.add('show'); }
@@ -1731,10 +1730,22 @@ function displayPercentile(data) {
     display.textContent = message;
 }
 
-// Shake to undo
+// ============================================================
+// SHAKE TO UNDO (settings-driven)
+// ============================================================
 let lastShakeTime = 0;
 let shakeEnabled = false;
 let lastX = 0, lastY = 0, lastZ = 0;
+
+// Platform detection
+function needsMotionPermission() {
+    return typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function';
+}
+
+function hasMotionSensor() {
+    return 'DeviceMotionEvent' in window;
+}
 
 function handleMotion(event) {
     if (!shakeEnabled || playState.completed) return;
@@ -1752,40 +1763,116 @@ function handleMotion(event) {
     }
 }
 
-async function requestMotionPermission() {
+function enableMotionListener() {
+    window.addEventListener('devicemotion', handleMotion);
+    shakeEnabled = true;
+}
+
+function disableMotionListener() {
+    window.removeEventListener('devicemotion', handleMotion);
+    shakeEnabled = false;
+}
+
+// Try to activate motion (called from settings toggle and on boot)
+async function activateShake() {
     if (shakeEnabled) return true;
-    try {
-        if (typeof DeviceMotionEvent !== 'undefined' &&
-            typeof DeviceMotionEvent.requestPermission === 'function') {
+    if (needsMotionPermission()) {
+        try {
             const response = await DeviceMotionEvent.requestPermission();
             if (response === 'granted') {
-                window.addEventListener('devicemotion', handleMotion);
-                shakeEnabled = true;
-                localStorage.removeItem('make24_motionDenied');
+                enableMotionListener();
                 return true;
             }
-            // User denied — remember so we don't ask again next page load
-            localStorage.setItem('make24_motionDenied', '1');
             return false;
-        } else if ('DeviceMotionEvent' in window) {
-            window.addEventListener('devicemotion', handleMotion);
-            shakeEnabled = true;
-            return true;
+        } catch (e) {
+            console.error('Motion permission error:', e);
+            return false;
         }
-    } catch (e) { console.error('Motion permission error:', e); }
+    } else if (hasMotionSensor()) {
+        enableMotionListener();
+        return true;
+    }
     return false;
 }
 
-let motionPermissionRequested = false;
-function maybeRequestMotion() {
-    // On iOS, DeviceMotionEvent.requestPermission() triggers a browser prompt every time
-    // unless user has toggled "always allow" in Safari settings. Only ask once per page load,
-    // and skip entirely if user previously denied (stored in localStorage).
-    if (motionPermissionRequested || shakeEnabled) return;
-    if (!('DeviceMotionEvent' in window)) return;
-    if (localStorage.getItem('make24_motionDenied') === '1') return;
-    motionPermissionRequested = true;
-    requestMotionPermission();
+function updateShakeToggleUI() {
+    const toggle = document.getElementById('shakeToggle');
+    if (!toggle) return; // not in DOM (e.g. test env)
+    const guidance = document.getElementById('shakeGuidance');
+    const desc = document.getElementById('shakeDesc');
+    const pref = localStorage.getItem('make24_shake');
+    const isOn = pref === '1' && shakeEnabled;
+
+    toggle.setAttribute('aria-checked', isOn ? 'true' : 'false');
+
+    if (!hasMotionSensor()) {
+        // Desktop or device without sensors — hide entire row
+        document.getElementById('shakeSettingRow').style.display = 'none';
+        guidance.classList.remove('visible');
+        return;
+    }
+
+    if (needsMotionPermission() && pref === '1' && !shakeEnabled) {
+        // iOS: user wants shake but permission wasn't granted this session
+        desc.textContent = 'Permission needed — tap the toggle to allow';
+        guidance.innerHTML = getIOSGuidanceHTML();
+        guidance.classList.add('visible');
+    } else if (isOn) {
+        desc.textContent = 'Shake your phone to undo the last move';
+        guidance.classList.remove('visible');
+    } else {
+        desc.textContent = 'Shake your phone to undo the last move';
+        guidance.classList.remove('visible');
+    }
+}
+
+function getIOSGuidanceHTML() {
+    return `
+        <p>Safari asks for permission each visit. To allow permanently:</p>
+        <ol class="guidance-steps">
+            <li>Open <b>Settings</b> on your iPhone</li>
+            <li>Scroll to <b>Safari</b> → <b>Advanced</b> → <b>Website Data</b></li>
+            <li>Find <b>make24.app</b> and enable <b>Motion & Orientation</b></li>
+        </ol>
+        <p>Or in Safari: tap <b>aA</b> in the address bar → <b>Website Settings</b> → enable <b>Motion & Orientation</b>.</p>
+    `;
+}
+
+async function handleShakeToggle() {
+    const pref = localStorage.getItem('make24_shake');
+    if (pref === '1' && shakeEnabled) {
+        // Turn off
+        disableMotionListener();
+        localStorage.setItem('make24_shake', '0');
+    } else {
+        // Turn on — attempt to get permission
+        const granted = await activateShake();
+        if (granted) {
+            localStorage.setItem('make24_shake', '1');
+        } else if (needsMotionPermission()) {
+            // Permission denied or dismissed — show guidance
+            localStorage.setItem('make24_shake', '1'); // remember intent
+        }
+    }
+    updateShakeToggleUI();
+}
+
+// Boot: silently restore if previously enabled
+async function initShakeSetting() {
+    const pref = localStorage.getItem('make24_shake');
+    if (pref === '1') {
+        if (needsMotionPermission()) {
+            // On iOS, can't auto-request (needs user gesture).
+            // We'll show the guidance and let user re-tap the toggle.
+        } else if (hasMotionSensor()) {
+            enableMotionListener();
+        }
+    }
+    updateShakeToggleUI();
+}
+
+if (document.getElementById('shakeToggle')) {
+    document.getElementById('shakeToggle').addEventListener('click', handleShakeToggle);
 }
 
 // ============================================================
@@ -2587,12 +2674,8 @@ async function boot() {
 
 boot();
 
-if (!('ontouchstart' in window)) {
-    if ('DeviceMotionEvent' in window && typeof DeviceMotionEvent.requestPermission !== 'function') {
-        window.addEventListener('devicemotion', handleMotion);
-        shakeEnabled = true;
-    }
-}
+// Initialize shake-to-undo from saved preference
+initShakeSetting();
 
 // ============================================================
 // EXPORTS FOR TESTING (Node.js only)

@@ -13,6 +13,8 @@
 const noopEl = {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     addEventListener() {},
+    setAttribute() {},
+    getAttribute() { return null; },
     style: {},
     textContent: '',
     innerHTML: '',
