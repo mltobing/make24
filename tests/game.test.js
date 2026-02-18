@@ -152,6 +152,37 @@ describe('findHintForPuzzle', () => {
         // Format: "A op B" (e.g. "1 + 2")
         expect(hint).toMatch(/^\d+ [+\u2212\u00D7\u00F7] \d+$/);
     });
+    test('hint leads to a solvable position for [8, 3, 8, 3]', () => {
+        const hint = game.findHintForPuzzle([8, 3, 8, 3]);
+        expect(hint).toBeTruthy();
+        // The correct first step is 8 ÷ 3, not 8 × 3
+        expect(hint).toContain('\u00F7'); // ÷
+    });
+    test('hint first step is verifiable for many puzzles', () => {
+        // Sample puzzles — each hint's first step should produce a solvable remainder
+        const testCases = [[1,2,3,4], [8,3,8,3], [1,5,5,5], [3,3,8,8], [2,3,5,12]];
+        for (const nums of testCases) {
+            const hint = game.findHintForPuzzle(nums);
+            if (!hint) continue; // skip unsolvable
+            // Parse hint: "A op B"
+            const parts = hint.split(' ');
+            const a = parseFloat(parts[0]);
+            const opSym = parts[1];
+            const b = parseFloat(parts[2]);
+            const opMap = { '+': '+', '\u2212': '-', '\u00D7': '*', '\u00F7': '/' };
+            const op = opMap[opSym];
+            const result = game.calc(a, op, b);
+            // Find which indices to remove (match by value)
+            const remaining = [...nums];
+            const idxA = remaining.indexOf(a);
+            remaining.splice(idxA, 1);
+            const idxB = remaining.indexOf(b);
+            remaining.splice(idxB, 1);
+            remaining.push(result);
+            // The remaining 3 numbers must be solvable
+            expect(game.solve24Full(remaining)).not.toBeNull();
+        }
+    });
 });
 
 describe('canMake24From3', () => {

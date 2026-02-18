@@ -180,7 +180,8 @@ function findHintForPuzzle(numbers) {
                     if (r === null) continue;
                     const remaining = numbers.filter((_, idx) => idx !== i && idx !== j);
                     remaining.push(r);
-                    if (canMake24From3(remaining)) {
+                    // Verify with the full solver to avoid false positives
+                    if (solve24Full(remaining) !== null) {
                         return `${a} ${opSymbols[op]} ${b}`;
                     }
                 }
