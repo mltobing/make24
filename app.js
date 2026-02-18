@@ -2371,6 +2371,10 @@ document.getElementById('moreBtn').addEventListener('click', (e) => {
 document.addEventListener('click', () => {
     document.getElementById('moreMenu').classList.remove('show');
 });
+document.getElementById('menuHintBtn').addEventListener('click', () => {
+    document.getElementById('moreMenu').classList.remove('show');
+    useHint();
+});
 document.getElementById('menuCalendarBtn').addEventListener('click', () => {
     document.getElementById('moreMenu').classList.remove('show');
     showCalendar();
