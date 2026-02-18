@@ -128,6 +128,36 @@ body {
     transform: scale(0.9);
 }
 
+/* Tutorial help button (? in header) */
+.tutorial-help-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #64748b;
+    background: none;
+    border: 1px solid #334155;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+    -webkit-tap-highlight-color: transparent;
+}
+.tutorial-help-btn.visible {
+    opacity: 0.6;
+    pointer-events: auto;
+}
+.tutorial-help-btn:hover {
+    opacity: 1;
+    color: #94a3b8;
+    border-color: #475569;
+}
+
 /* Hint button */
 .hint-btn {
     font-size: 1.25rem;
