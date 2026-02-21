@@ -180,7 +180,8 @@ function findHintForPuzzle(numbers) {
                     if (r === null) continue;
                     const remaining = numbers.filter((_, idx) => idx !== i && idx !== j);
                     remaining.push(r);
-                    if (canMake24From3(remaining)) {
+                    // Verify with the full solver to avoid false positives
+                    if (solve24Full(remaining) !== null) {
                         return `${a} ${opSymbols[op]} ${b}`;
                     }
                 }
@@ -1131,7 +1132,7 @@ function renderCards() {
         if (cardData) {
             const card = document.createElement('div');
             card.className = 'card';
-            card.textContent = formatNumber(cardData.value);
+            card.appendChild(formatNumberHTML(cardData.value));
             card.dataset.index = playState.cards.indexOf(cardData);
             const cardIndex = playState.cards.indexOf(cardData);
             if (playState.selected.includes(cardIndex)) {
@@ -1145,11 +1146,68 @@ function renderCards() {
     });
 }
 
+function toFraction(n) {
+    if (Number.isInteger(n)) return { whole: n, num: 0, den: 1 };
+    const sign = n < 0 ? -1 : 1;
+    const absN = Math.abs(n);
+    const whole = Math.floor(absN);
+    const frac = absN - whole;
+    // Try denominators up to 1000 to find an exact match
+    for (let den = 2; den <= 1000; den++) {
+        const num = Math.round(frac * den);
+        if (Math.abs(num / den - frac) < FLOAT_EPSILON) {
+            // Simplify
+            function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+            const g = gcd(num, den);
+            const sNum = num / g;
+            const sDen = den / g;
+            if (sNum === 0) return { whole: sign * whole, num: 0, den: 1 };
+            return { whole: sign * whole, num: sNum, den: sDen, negative: sign < 0 };
+        }
+    }
+    return null; // Not a clean fraction
+}
+
 function formatNumber(n) {
     if (Number.isInteger(n)) return n.toString();
     const rounded = Math.round(n * 100) / 100;
     if (Number.isInteger(rounded)) return rounded.toString();
+    const f = toFraction(n);
+    if (f && f.num > 0) {
+        const sign = f.negative ? '\u2212' : '';
+        if (f.whole !== 0) return `${sign}${Math.abs(f.whole)} ${f.num}/${f.den}`;
+        return `${sign}${f.num}/${f.den}`;
+    }
     return rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function formatNumberHTML(n) {
+    if (Number.isInteger(n)) return document.createTextNode(n.toString());
+    const rounded = Math.round(n * 100) / 100;
+    if (Number.isInteger(rounded)) return document.createTextNode(rounded.toString());
+    const f = toFraction(n);
+    if (f && f.num > 0) {
+        const span = document.createElement('span');
+        span.className = 'fraction-display';
+        const sign = f.negative ? '\u2212' : '';
+        if (f.whole !== 0) {
+            const wholeSpan = document.createElement('span');
+            wholeSpan.className = 'fraction-whole';
+            wholeSpan.textContent = `${sign}${Math.abs(f.whole)}`;
+            span.appendChild(wholeSpan);
+        } else if (sign) {
+            const signSpan = document.createElement('span');
+            signSpan.className = 'fraction-whole';
+            signSpan.textContent = sign;
+            span.appendChild(signSpan);
+        }
+        const fracSpan = document.createElement('span');
+        fracSpan.className = 'fraction-part';
+        fracSpan.innerHTML = `<span class="frac-num">${f.num}</span><span class="frac-den">${f.den}</span>`;
+        span.appendChild(fracSpan);
+        return span;
+    }
+    return document.createTextNode(rounded.toFixed(2).replace(/\.?0+$/, ''));
 }
 
 function selectCard(index) {
@@ -1269,7 +1327,8 @@ function updateResult() {
     const display = document.getElementById('resultDisplay');
     if (remaining.length === 1) {
         const val = remaining[0].value;
-        display.textContent = formatNumber(val);
+        display.innerHTML = '';
+        display.appendChild(formatNumberHTML(val));
         display.classList.add('visible');
         if (Math.abs(val - TARGET_NUMBER) < FLOAT_EPSILON) {
             display.classList.add('success');
@@ -2114,7 +2173,7 @@ function renderReplayCards() {
         if (card) {
             const el = document.createElement('div');
             el.className = 'replay-card';
-            el.textContent = formatNumber(card.value);
+            el.appendChild(formatNumberHTML(card.value));
             slot.appendChild(el);
         }
     }
@@ -2718,6 +2777,7 @@ if (typeof module !== 'undefined' && module.exports) {
         mulberry32,
         generatePuzzle,
         formatNumber,
+        toFraction,
         getPuzzleNumber,
         getDateFromPuzzleNumber,
         computeStreakFromHistory,

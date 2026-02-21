@@ -45,7 +45,8 @@ const noopEl = {
 global.document = {
     getElementById() { return noopEl; },
     querySelectorAll() { return []; },
-    createElement() { return noopEl; },
+    createElement() { return { ...noopEl, children: [], appendChild() {} }; },
+    createTextNode(text) { return { textContent: text }; },
     addEventListener() {},
     body: { addEventListener() {} },
 };
@@ -152,6 +153,37 @@ describe('findHintForPuzzle', () => {
         // Format: "A op B" (e.g. "1 + 2")
         expect(hint).toMatch(/^\d+ [+\u2212\u00D7\u00F7] \d+$/);
     });
+    test('hint leads to a solvable position for [8, 3, 8, 3]', () => {
+        const hint = game.findHintForPuzzle([8, 3, 8, 3]);
+        expect(hint).toBeTruthy();
+        // The correct first step is 8 ÷ 3, not 8 × 3
+        expect(hint).toContain('\u00F7'); // ÷
+    });
+    test('hint first step is verifiable for many puzzles', () => {
+        // Sample puzzles — each hint's first step should produce a solvable remainder
+        const testCases = [[1,2,3,4], [8,3,8,3], [1,5,5,5], [3,3,8,8], [2,3,5,12]];
+        for (const nums of testCases) {
+            const hint = game.findHintForPuzzle(nums);
+            if (!hint) continue; // skip unsolvable
+            // Parse hint: "A op B"
+            const parts = hint.split(' ');
+            const a = parseFloat(parts[0]);
+            const opSym = parts[1];
+            const b = parseFloat(parts[2]);
+            const opMap = { '+': '+', '\u2212': '-', '\u00D7': '*', '\u00F7': '/' };
+            const op = opMap[opSym];
+            const result = game.calc(a, op, b);
+            // Find which indices to remove (match by value)
+            const remaining = [...nums];
+            const idxA = remaining.indexOf(a);
+            remaining.splice(idxA, 1);
+            const idxB = remaining.indexOf(b);
+            remaining.splice(idxB, 1);
+            remaining.push(result);
+            // The remaining 3 numbers must be solvable
+            expect(game.solve24Full(remaining)).not.toBeNull();
+        }
+    });
 });
 
 describe('canMake24From3', () => {
@@ -170,11 +202,55 @@ describe('formatNumber', () => {
     test('formats integers without decimals', () => {
         expect(game.formatNumber(24)).toBe('24');
     });
-    test('formats clean fractions', () => {
-        expect(game.formatNumber(2.5)).toBe('2.5');
-    });
     test('formats near-integer values', () => {
         expect(game.formatNumber(24.00)).toBe('24');
+    });
+    test('formats 1/2 as fraction', () => {
+        expect(game.formatNumber(0.5)).toBe('1/2');
+    });
+    test('formats 2.5 as mixed number', () => {
+        expect(game.formatNumber(2.5)).toBe('2 1/2');
+    });
+    test('formats 1/3 as fraction', () => {
+        expect(game.formatNumber(1/3)).toBe('1/3');
+    });
+    test('formats 2 2/3 as mixed number', () => {
+        expect(game.formatNumber(8/3)).toBe('2 2/3');
+    });
+    test('formats 3/4 as fraction', () => {
+        expect(game.formatNumber(0.75)).toBe('3/4');
+    });
+    test('formats negative fractions', () => {
+        expect(game.formatNumber(-0.5)).toBe('\u22121/2');
+        expect(game.formatNumber(-1.5)).toBe('\u22121 1/2');
+    });
+});
+
+describe('toFraction', () => {
+    test('integer returns whole only', () => {
+        expect(game.toFraction(5)).toEqual({ whole: 5, num: 0, den: 1 });
+    });
+    test('simple fraction', () => {
+        const f = game.toFraction(0.5);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(2);
+        expect(f.whole).toBe(0);
+    });
+    test('mixed number', () => {
+        const f = game.toFraction(2.5);
+        expect(f.whole).toBe(2);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(2);
+    });
+    test('thirds', () => {
+        const f = game.toFraction(1/3);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(3);
+    });
+    test('reduces fractions', () => {
+        const f = game.toFraction(0.75); // 3/4
+        expect(f.num).toBe(3);
+        expect(f.den).toBe(4);
     });
 });
 
