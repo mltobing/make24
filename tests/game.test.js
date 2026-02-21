@@ -45,7 +45,8 @@ const noopEl = {
 global.document = {
     getElementById() { return noopEl; },
     querySelectorAll() { return []; },
-    createElement() { return noopEl; },
+    createElement() { return { ...noopEl, children: [], appendChild() {} }; },
+    createTextNode(text) { return { textContent: text }; },
     addEventListener() {},
     body: { addEventListener() {} },
 };
@@ -201,11 +202,55 @@ describe('formatNumber', () => {
     test('formats integers without decimals', () => {
         expect(game.formatNumber(24)).toBe('24');
     });
-    test('formats clean fractions', () => {
-        expect(game.formatNumber(2.5)).toBe('2.5');
-    });
     test('formats near-integer values', () => {
         expect(game.formatNumber(24.00)).toBe('24');
+    });
+    test('formats 1/2 as fraction', () => {
+        expect(game.formatNumber(0.5)).toBe('1/2');
+    });
+    test('formats 2.5 as mixed number', () => {
+        expect(game.formatNumber(2.5)).toBe('2 1/2');
+    });
+    test('formats 1/3 as fraction', () => {
+        expect(game.formatNumber(1/3)).toBe('1/3');
+    });
+    test('formats 2 2/3 as mixed number', () => {
+        expect(game.formatNumber(8/3)).toBe('2 2/3');
+    });
+    test('formats 3/4 as fraction', () => {
+        expect(game.formatNumber(0.75)).toBe('3/4');
+    });
+    test('formats negative fractions', () => {
+        expect(game.formatNumber(-0.5)).toBe('\u22121/2');
+        expect(game.formatNumber(-1.5)).toBe('\u22121 1/2');
+    });
+});
+
+describe('toFraction', () => {
+    test('integer returns whole only', () => {
+        expect(game.toFraction(5)).toEqual({ whole: 5, num: 0, den: 1 });
+    });
+    test('simple fraction', () => {
+        const f = game.toFraction(0.5);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(2);
+        expect(f.whole).toBe(0);
+    });
+    test('mixed number', () => {
+        const f = game.toFraction(2.5);
+        expect(f.whole).toBe(2);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(2);
+    });
+    test('thirds', () => {
+        const f = game.toFraction(1/3);
+        expect(f.num).toBe(1);
+        expect(f.den).toBe(3);
+    });
+    test('reduces fractions', () => {
+        const f = game.toFraction(0.75); // 3/4
+        expect(f.num).toBe(3);
+        expect(f.den).toBe(4);
     });
 });
 

@@ -642,6 +642,43 @@ body {
     user-select: none;
 }
 
+/* Fraction display inside cards */
+.fraction-display {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.05em;
+    line-height: 1;
+}
+.fraction-whole {
+    font-size: inherit;
+}
+.fraction-part {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 0.45em;
+    line-height: 1.1;
+    vertical-align: middle;
+    position: relative;
+}
+.frac-num {
+    border-bottom: 1.5px solid currentColor;
+    padding: 0 0.15em 0.05em;
+}
+.frac-den {
+    padding: 0.05em 0.15em 0;
+}
+/* Scale down font when showing fractions */
+.card .fraction-display {
+    font-size: 2rem;
+}
+.result-display .fraction-display {
+    font-size: 2.5rem;
+}
+.replay-card .fraction-display {
+    font-size: 1.5rem;
+}
+
 .card:active { transform: scale(0.95); }
 .card.selected { border-color: #22d3ee; box-shadow: 0 0 24px rgba(34, 211, 238, 0.3); transform: scale(1.08); }
 .card.selected.first { border-color: #22d3ee; }
