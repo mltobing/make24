@@ -530,16 +530,44 @@ async function ensureCanonicalDeviceId() {
 async function syncFromSupabase() {
     try {
         const headers = await getAuthHeaders();
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_player`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ p_device_id: gameState.deviceId })
-        });
-        if (!response.ok) {
-            showSyncError('Could not sync streak — server returned an error.');
-            return;
+        const { data: { session } } = await sb.auth.getSession();
+
+        // When logged in, try to find the player by auth user_id first.
+        // This ensures a second device sees the same player row (and streak)
+        // even if ensureCanonicalDeviceId failed to register it.
+        let player = null;
+        if (session?.user?.id) {
+            const userUrl = `${SUPABASE_URL}/rest/v1/players?user_id=eq.${session.user.id}&select=id,current_streak,streak,freezes,device_id&limit=1`;
+            const userRes = await fetch(userUrl, { headers });
+            if (userRes.ok) {
+                const rows = await userRes.json();
+                if (rows && rows.length > 0) {
+                    player = rows[0];
+                    // Adopt the canonical device_id from the existing player row
+                    // so that future syncs and trackPlay calls use the right ID
+                    if (player.device_id && player.device_id !== gameState.deviceId) {
+                        localStorage.setItem('make24_device_id', player.device_id);
+                        gameState.deviceId = player.device_id;
+                        saveState();
+                    }
+                }
+            }
         }
-        const player = await response.json();
+
+        // Fallback: look up by device_id (anonymous play, or user_id lookup failed)
+        if (!player) {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_player`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ p_device_id: gameState.deviceId })
+            });
+            if (!response.ok) {
+                showSyncError('Could not sync streak — server returned an error.');
+                return;
+            }
+            player = await response.json();
+        }
+
         const serverStreak = Number(player?.current_streak ?? player?.streak ?? 0);
         const serverFreezes = Number(player?.freezes ?? 0);
         const localStreak = Number(gameState.streak ?? 0);
@@ -558,16 +586,30 @@ async function syncFromSupabase() {
 async function syncHistoryFromSupabase() {
     try {
         const headers = await getAuthHeaders();
-        // Step 1: Get player_id from device_id
-        const playerUrl = `${SUPABASE_URL}/rest/v1/players?device_id=eq.${encodeURIComponent(gameState.deviceId)}&select=id&limit=1`;
-        const playerRes = await fetch(playerUrl, { headers });
-        if (!playerRes.ok) {
-            showSyncError('Could not sync history — server returned an error.');
-            return;
+        const { data: { session } } = await sb.auth.getSession();
+
+        // Step 1: Get player_id — prefer user_id lookup when logged in,
+        // fall back to device_id for anonymous play
+        let playerId = null;
+        if (session?.user?.id) {
+            const userUrl = `${SUPABASE_URL}/rest/v1/players?user_id=eq.${session.user.id}&select=id&limit=1`;
+            const userRes = await fetch(userUrl, { headers });
+            if (userRes.ok) {
+                const rows = await userRes.json();
+                if (rows && rows.length > 0) playerId = rows[0].id;
+            }
         }
-        const players = await playerRes.json();
-        if (!players || players.length === 0) return;
-        const playerId = players[0].id;
+        if (!playerId) {
+            const playerUrl = `${SUPABASE_URL}/rest/v1/players?device_id=eq.${encodeURIComponent(gameState.deviceId)}&select=id&limit=1`;
+            const playerRes = await fetch(playerUrl, { headers });
+            if (!playerRes.ok) {
+                showSyncError('Could not sync history — server returned an error.');
+                return;
+            }
+            const players = await playerRes.json();
+            if (!players || players.length === 0) return;
+            playerId = players[0].id;
+        }
 
         // Step 2: Get all solved puzzles from daily_results
         const url = `${SUPABASE_URL}/rest/v1/daily_results?player_id=eq.${playerId}&solved=eq.true&select=puzzle_num,moves,solve_time_seconds,operators,undos,is_perfect,is_fast&order=puzzle_num.desc&limit=500`;
@@ -587,6 +629,7 @@ async function syncHistoryFromSupabase() {
             if (!existing || !existing.completed) {
                 gameState.history[num] = {
                     completed: true,
+                    solvedOnTime: true,
                     moves: row.moves || 0,
                     operators: row.operators || [],
                     undos: row.undos || 0,
