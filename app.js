@@ -464,8 +464,30 @@ async function verifyOtpCode() {
 async function promptSignOut() {
     const ok = confirm('Sign out? (Your local history stays on this device.)');
     if (!ok) return;
-    const { error } = await sb.auth.signOut();
-    if (error) alert('Sign-out failed: ' + error.message);
+    console.log('[SYNC DEBUG] promptSignOut: user confirmed, calling sb.auth.signOut()');
+    try {
+        const { error } = await sb.auth.signOut();
+        console.log('[SYNC DEBUG] signOut returned — error:', JSON.stringify(error));
+        if (error) {
+            console.error('[SYNC DEBUG] signOut returned error, trying local scope:', JSON.stringify(error));
+            // If global sign-out fails (e.g. network/token issue), force local sign-out
+            const { error: localErr } = await sb.auth.signOut({ scope: 'local' });
+            if (localErr) {
+                console.error('[SYNC DEBUG] local signOut also failed:', JSON.stringify(localErr));
+                alert('Sign-out failed: ' + error.message);
+            }
+        }
+    } catch (e) {
+        console.error('[SYNC DEBUG] signOut threw exception:', e);
+        // Force local sign-out even if global threw
+        try {
+            await sb.auth.signOut({ scope: 'local' });
+            console.log('[SYNC DEBUG] local signOut succeeded after exception');
+        } catch (e2) {
+            console.error('[SYNC DEBUG] local signOut also threw:', e2);
+            alert('Sign-out failed: ' + (e.message || e));
+        }
+    }
     await updateSyncUI();
 }
 
