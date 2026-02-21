@@ -517,14 +517,42 @@ async function ensureCanonicalDeviceId() {
     const localId = getDeviceId();
     try {
         const { data, error } = await sb.rpc('get_or_set_device_id', { p_device_id: localId });
-        if (error) { console.log('get_or_set_device_id error:', error.message); return; }
+        if (error) {
+            console.error('get_or_set_device_id failed:', JSON.stringify(error));
+            // Fallback: try to register this device directly
+            await registerDeviceFallback(session.user.id, localId);
+            return;
+        }
         const canonicalId = data;
         if (canonicalId && canonicalId !== localId) {
+            // Server returned a different canonical ID — adopt it
             localStorage.setItem('make24_device_id', canonicalId);
             gameState.deviceId = canonicalId;
             saveState();
+            // Also register the local device ID so user_devices knows about this device
+            await registerDeviceFallback(session.user.id, localId);
         }
-    } catch (e) { console.log('ensureCanonicalDeviceId skipped:', e); }
+    } catch (e) { console.error('ensureCanonicalDeviceId exception:', e); }
+}
+
+// Fallback: directly insert into user_devices if the RPC didn't register this device.
+// The server-side get_or_set_device_id returns the canonical ID for existing users
+// but may not insert a new row for the second device.
+async function registerDeviceFallback(userId, deviceId) {
+    try {
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/user_devices`, {
+            method: 'POST',
+            headers: { ...headers, 'Prefer': 'resolution=ignore-duplicates' },
+            body: JSON.stringify({ user_id: userId, device_id: deviceId })
+        });
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('registerDeviceFallback failed:', response.status, body);
+        }
+    } catch (e) {
+        console.error('registerDeviceFallback exception:', e);
+    }
 }
 
 async function syncFromSupabase() {
