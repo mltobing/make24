@@ -546,7 +546,33 @@ async function ensureCanonicalDeviceId() {
         console.log('[SYNC DEBUG] get_or_set_device_id RETURNED — data:', JSON.stringify(data), 'error:', JSON.stringify(error));
         if (error) {
             console.error('[SYNC DEBUG] get_or_set_device_id FAILED:', JSON.stringify(error));
-            // Fallback: try to register this device directly
+            // Fallback: the RPC likely failed because a row already exists for this user
+            // (e.g. 23505 duplicate key). Query user_devices directly to get the canonical
+            // device_id so sync functions can find the right player row.
+            try {
+                const headers = await getAuthHeaders();
+                const res = await fetch(
+                    `${SUPABASE_URL}/rest/v1/user_devices?user_id=eq.${session.user.id}&select=device_id&limit=1`,
+                    { headers }
+                );
+                if (res.ok) {
+                    const rows = await res.json();
+                    console.log('[SYNC DEBUG] user_devices direct lookup returned:', JSON.stringify(rows));
+                    if (rows && rows.length > 0 && rows[0].device_id) {
+                        const canonicalId = rows[0].device_id;
+                        if (canonicalId !== localId) {
+                            localStorage.setItem('make24_device_id', canonicalId);
+                            gameState.deviceId = canonicalId;
+                            saveState();
+                            console.log('[SYNC DEBUG] Adopted canonical device ID from user_devices:', canonicalId, '(was:', localId, ')');
+                        }
+                    }
+                } else {
+                    console.error('[SYNC DEBUG] user_devices direct lookup failed:', res.status, await res.text());
+                }
+            } catch (fe) {
+                console.error('[SYNC DEBUG] user_devices direct lookup exception:', fe);
+            }
             await registerDeviceFallback(session.user.id, localId);
             return;
         }
