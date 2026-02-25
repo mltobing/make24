@@ -617,30 +617,52 @@ async function verifyOtpCode() {
 async function promptSignOut() {
     const ok = confirm('Sign out? (Your local history stays on this device.)');
     if (!ok) return;
-    console.log('[SYNC DEBUG] promptSignOut: user confirmed, calling sb.auth.signOut()');
+    console.log('[SYNC DEBUG] promptSignOut: user confirmed, starting sign-out flow');
+
+    // Step 1: Best-effort global sign-out (invalidates token server-side)
     try {
         const { error } = await sb.auth.signOut();
-        console.log('[SYNC DEBUG] signOut returned — error:', JSON.stringify(error));
         if (error) {
-            console.error('[SYNC DEBUG] signOut returned error, trying local scope:', JSON.stringify(error));
-            // If global sign-out fails (e.g. network/token issue), force local sign-out
-            const { error: localErr } = await sb.auth.signOut({ scope: 'local' });
-            if (localErr) {
-                console.error('[SYNC DEBUG] local signOut also failed:', JSON.stringify(localErr));
-                alert('Sign-out failed: ' + error.message);
-            }
+            console.warn('[SYNC DEBUG] global signOut returned error:', JSON.stringify(error));
+        } else {
+            console.log('[SYNC DEBUG] global signOut succeeded');
+            await updateSyncUI();
+            return;
         }
     } catch (e) {
-        console.error('[SYNC DEBUG] signOut threw exception:', e);
-        // Force local sign-out even if global threw
+        console.error('[SYNC DEBUG] global signOut threw:', e);
+    }
+
+    // Step 2: Always force local sign-out (clears local session regardless of global result)
+    let localCleared = false;
+    try {
+        const { error } = await sb.auth.signOut({ scope: 'local' });
+        if (error) {
+            console.warn('[SYNC DEBUG] local signOut returned error:', JSON.stringify(error));
+        } else {
+            console.log('[SYNC DEBUG] local signOut succeeded');
+            localCleared = true;
+        }
+    } catch (e) {
+        console.error('[SYNC DEBUG] local signOut threw:', e);
+    }
+
+    // Step 3: Nuclear fallback — directly remove the auth token from localStorage.
+    // This handles the case where the Supabase JS client cannot clear its internal
+    // session state (e.g. expired refresh token causing _useSession to bail early).
+    if (!localCleared) {
         try {
-            await sb.auth.signOut({ scope: 'local' });
-            console.log('[SYNC DEBUG] local signOut succeeded after exception');
-        } catch (e2) {
-            console.error('[SYNC DEBUG] local signOut also threw:', e2);
-            alert('Sign-out failed: ' + (e.message || e));
+            const projectRef = SUPABASE_URL.match(/\/\/([^.]+)\./)?.[1];
+            if (projectRef) {
+                localStorage.removeItem(`sb-${projectRef}-auth-token`);
+                localStorage.removeItem(`sb-${projectRef}-auth-code-verifier`);
+                console.log('[SYNC DEBUG] manually removed auth tokens from localStorage');
+            }
+        } catch (e) {
+            console.error('[SYNC DEBUG] manual localStorage clear threw:', e);
         }
     }
+
     await updateSyncUI();
 }
 
@@ -684,6 +706,26 @@ async function getAuthHeaders() {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${token}`
     };
+}
+
+// Normalize the UUID returned by get_or_create_player — PostgREST can return
+// a bare string, an array, or an object depending on the function's RETURNS clause.
+function extractUuidFromRpcResult(payload) {
+    if (!payload) return null;
+    if (typeof payload === 'string') return payload;
+    if (Array.isArray(payload)) {
+        if (payload.length === 0) return null;
+        const first = payload[0];
+        if (typeof first === 'string') return first;
+        if (first && typeof first === 'object') {
+            return first.id || first.player_id || first.out_player_id || Object.values(first)[0];
+        }
+        return null;
+    }
+    if (typeof payload === 'object') {
+        return payload.id || payload.player_id || payload.out_player_id || Object.values(payload)[0];
+    }
+    return null;
 }
 
 async function ensureCanonicalDeviceId() {
@@ -772,6 +814,14 @@ async function syncFromSupabase() {
         const { data: { session } } = await sb.auth.getSession();
         console.log('[SYNC DEBUG] syncFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
+        // Only sync with the server when the user is signed in.
+        // Guest users rely on local state only; making unauthenticated RPC calls
+        // against the server produces noisy errors and can fail due to RLS policies.
+        if (!session?.user?.id) {
+            console.log('[SYNC DEBUG] syncFromSupabase: not signed in; skipping server streak sync.');
+            return;
+        }
+
         // When logged in, try to find the player by auth_id first.
         // This ensures a second device sees the same player row (and streak)
         // even if ensureCanonicalDeviceId failed to register it.
@@ -799,7 +849,7 @@ async function syncFromSupabase() {
             }
         }
 
-        // Fallback: look up by device_id (anonymous play, or user_id lookup failed)
+        // Fallback: look up by device_id (signed-in user whose auth_id lookup failed)
         if (!player) {
             console.log('[SYNC DEBUG] syncFromSupabase: FALLBACK — querying get_or_create_player with device_id:', gameState.deviceId);
             const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_or_create_player`, {
@@ -808,16 +858,26 @@ async function syncFromSupabase() {
                 body: JSON.stringify({ p_device_id: gameState.deviceId })
             });
             if (!response.ok) {
-                showSyncError('Could not sync streak — server returned an error.');
+                const body = await response.text();
+                console.error('[SYNC DEBUG] get_or_create_player failed:', response.status, body);
+                showSyncError(`Could not sync streak — server error (${response.status})`);
                 return;
             }
-            const playerId = await response.json();
+            const raw = await response.json();
+            const playerId = extractUuidFromRpcResult(raw);
+            if (!playerId) {
+                console.error('[SYNC DEBUG] get_or_create_player returned unexpected payload:', raw);
+                showSyncError('Could not sync streak — bad player id');
+                return;
+            }
             const playerRes = await fetch(
-                `${SUPABASE_URL}/rest/v1/players?id=eq.${playerId}&select=id,current_streak,streak,freezes,device_id&limit=1`,
+                `${SUPABASE_URL}/rest/v1/players?id=eq.${encodeURIComponent(playerId)}&select=id,current_streak,streak,freezes,device_id&limit=1`,
                 { headers }
             );
             if (!playerRes.ok) {
-                showSyncError('Could not sync streak — server returned an error.');
+                const body = await playerRes.text();
+                console.error('[SYNC DEBUG] fetch player by id failed:', playerRes.status, body);
+                showSyncError(`Could not sync streak — server error (${playerRes.status})`);
                 return;
             }
             const playerRows = await playerRes.json();
@@ -848,8 +908,14 @@ async function syncHistoryFromSupabase() {
         const { data: { session } } = await sb.auth.getSession();
         console.log('[SYNC DEBUG] syncHistoryFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
+        // Only sync with the server when the user is signed in.
+        if (!session?.user?.id) {
+            console.log('[SYNC DEBUG] syncHistoryFromSupabase: not signed in; skipping server history sync.');
+            return;
+        }
+
         // Step 1: Get player_id — prefer auth_id lookup when logged in,
-        // fall back to device_id for anonymous play
+        // fall back to device_id if auth_id lookup fails
         let playerId = null;
         if (session?.user?.id) {
             const userUrl = `${SUPABASE_URL}/rest/v1/players?auth_id=eq.${session.user.id}&select=id&limit=1`;
@@ -2137,6 +2203,8 @@ async function trackPlay(success) {
 
 async function syncStreakToSupabase() {
     try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session?.user?.id) return;
         const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_player_streak`, {
             method: 'POST',
