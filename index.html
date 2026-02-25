@@ -203,6 +203,15 @@
                 <div id="syncSignedInView" style="display:none;">
                     <button class="sync-signout" id="syncSignOutBtn" aria-label="Sign out">Sign out</button>
                 </div>
+                <div class="backup-section">
+                    <div class="sync-label">Backup</div>
+                    <div class="sync-methods">
+                        <button class="email-send-btn" id="exportProgressBtn" aria-label="Export progress">Export progress</button>
+                        <button class="otp-verify-btn" id="importProgressBtn" aria-label="Import progress">Import progress</button>
+                        <input type="file" id="importProgressFile" accept="application/json" style="display:none;">
+                    </div>
+                    <div class="sync-status" id="backupStatus"></div>
+                </div>
             </div>
             <button class="modal-close" id="closeSettings" aria-label="Close">Close</button>
         </div>
