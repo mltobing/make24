@@ -306,7 +306,159 @@ function showSyncError(message) {
 // ============================================================
 const NUDGE_DISMISSED_KEY = 'make24_sync_nudge_dismissed';
 const STREAK_NUDGE_MILESTONES = [3, 7, 14];
+const LAST_USER_ID_KEY = 'make24_last_user_id';
 let pendingOtpEmail = null;
+
+function setBackupStatus(message, type = '') {
+    const status = document.getElementById('backupStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `sync-status${type ? ` ${type}` : ''}`;
+}
+
+function collectMake24LocalStorageDump() {
+    const dump = {};
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key === STORAGE_KEY || key.startsWith('make24')) {
+            dump[key] = localStorage.getItem(key);
+        }
+    }
+    return dump;
+}
+
+function hasReplayData(entry) {
+    if (!entry) return false;
+    return (Array.isArray(entry.solutionSteps) && entry.solutionSteps.length > 0)
+        || (Array.isArray(entry.replaySequence) && entry.replaySequence.length > 0);
+}
+
+function chooseRicherHistoryEntry(currentEntry, importedEntry) {
+    if (!currentEntry) return importedEntry;
+    if (!importedEntry) return currentEntry;
+
+    const currentReplay = hasReplayData(currentEntry);
+    const importedReplay = hasReplayData(importedEntry);
+    if (currentReplay !== importedReplay) {
+        return importedReplay ? importedEntry : currentEntry;
+    }
+
+    const currentCompleted = !!currentEntry.completed;
+    const importedCompleted = !!importedEntry.completed;
+    if (currentCompleted && importedCompleted) {
+        const currentMoves = Number(currentEntry.moves ?? Infinity);
+        const importedMoves = Number(importedEntry.moves ?? Infinity);
+        if (Number.isFinite(importedMoves) && importedMoves < currentMoves) return importedEntry;
+        if (Number.isFinite(currentMoves) && currentMoves < importedMoves) return currentEntry;
+
+        const currentTime = Number(currentEntry.solveTime ?? Infinity);
+        const importedTime = Number(importedEntry.solveTime ?? Infinity);
+        if (Number.isFinite(importedTime) && importedTime < currentTime) return importedEntry;
+        if (Number.isFinite(currentTime) && currentTime < importedTime) return currentEntry;
+    }
+
+    return currentEntry;
+}
+
+function mergeStoredGameState(currentState, importedState) {
+    const safeCurrent = currentState && typeof currentState === 'object' ? currentState : {};
+    const safeImported = importedState && typeof importedState === 'object' ? importedState : {};
+
+    const merged = { ...safeCurrent, ...safeImported };
+    const currentHistory = safeCurrent.history && typeof safeCurrent.history === 'object' ? safeCurrent.history : {};
+    const importedHistory = safeImported.history && typeof safeImported.history === 'object' ? safeImported.history : {};
+    const mergedHistory = { ...currentHistory };
+    const puzzleNums = new Set([...Object.keys(currentHistory), ...Object.keys(importedHistory)]);
+
+    for (const puzzleNum of puzzleNums) {
+        const currentEntry = currentHistory[puzzleNum];
+        const importedEntry = importedHistory[puzzleNum];
+
+        if (currentEntry?.completed && importedEntry?.completed) {
+            const richer = chooseRicherHistoryEntry(currentEntry, importedEntry);
+            mergedHistory[puzzleNum] = { ...richer, completed: true };
+        } else if (currentEntry?.completed || importedEntry?.completed) {
+            mergedHistory[puzzleNum] = {
+                ...(currentEntry?.completed ? currentEntry : importedEntry),
+                completed: true
+            };
+        } else if (currentEntry || importedEntry) {
+            mergedHistory[puzzleNum] = chooseRicherHistoryEntry(currentEntry, importedEntry);
+        }
+    }
+
+    merged.history = mergedHistory;
+    merged.streak = Math.max(Number(safeCurrent.streak || 0), Number(safeImported.streak || 0));
+    merged.freezes = Math.max(Number(safeCurrent.freezes || 0), Number(safeImported.freezes || 0));
+    merged.lastPlayedDate = Math.max(
+        Number(safeCurrent.lastPlayedDate || 0),
+        Number(safeImported.lastPlayedDate || 0)
+    ) || null;
+    return merged;
+}
+
+function exportProgressToFile() {
+    try {
+        const payload = {
+            version: 1,
+            app: 'make24',
+            exportedAt: new Date().toISOString(),
+            localStorage: collectMake24LocalStorageDump()
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const stamp = payload.exportedAt.replace(/[:.]/g, '-');
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `make24-progress-${stamp}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+        setBackupStatus('Progress exported.', 'success');
+    } catch (e) {
+        console.error('Export failed:', e);
+        setBackupStatus('Export failed.', 'error');
+    }
+}
+
+async function importProgressFromFile(file) {
+    if (!file) return;
+    try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const isValid = parsed
+            && parsed.version === 1
+            && parsed.app === 'make24'
+            && parsed.localStorage
+            && typeof parsed.localStorage === 'object';
+        if (!isValid) {
+            setBackupStatus('Invalid backup file.', 'error');
+            return;
+        }
+
+        const ok = confirm('This will merge/overwrite local progress with imported data. Continue?');
+        if (!ok) return;
+
+        const currentStored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        const importedStored = JSON.parse(parsed.localStorage[STORAGE_KEY] || '{}');
+        const merged = mergeStoredGameState(currentStored, importedStored);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+
+        for (const [key, value] of Object.entries(parsed.localStorage)) {
+            if (key === STORAGE_KEY) continue;
+            if (key.startsWith('make24')) {
+                localStorage.setItem(key, value);
+            }
+        }
+
+        setBackupStatus('Import complete. Reloading...', 'success');
+        setTimeout(() => window.location.reload(), 250);
+    } catch (e) {
+        console.error('Import failed:', e);
+        setBackupStatus('Import failed. Check JSON file.', 'error');
+    }
+}
 
 async function updateSyncUI() {
     const syncSection = document.getElementById('syncSection');
@@ -449,6 +601,7 @@ async function verifyOtpCode() {
         // Drive the full sync explicitly — don't rely solely on onAuthStateChange
         await updateSyncUI();
         await ensureCanonicalDeviceId();
+        await backfillLocalHistoryToSupabase();
         await syncFromSupabase();
         await syncHistoryFromSupabase();
         updateStreak();
@@ -619,17 +772,17 @@ async function syncFromSupabase() {
         const { data: { session } } = await sb.auth.getSession();
         console.log('[SYNC DEBUG] syncFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
-        // When logged in, try to find the player by auth user_id first.
+        // When logged in, try to find the player by auth_id first.
         // This ensures a second device sees the same player row (and streak)
         // even if ensureCanonicalDeviceId failed to register it.
         let player = null;
         if (session?.user?.id) {
-            const userUrl = `${SUPABASE_URL}/rest/v1/players?user_id=eq.${session.user.id}&select=id,current_streak,streak,freezes,device_id&limit=1`;
-            console.log('[SYNC DEBUG] syncFromSupabase: querying players by user_id:', session.user.id);
+            const userUrl = `${SUPABASE_URL}/rest/v1/players?auth_id=eq.${session.user.id}&select=id,current_streak,streak,freezes,device_id&limit=1`;
+            console.log('[SYNC DEBUG] syncFromSupabase: querying players by auth_id:', session.user.id);
             const userRes = await fetch(userUrl, { headers });
             if (userRes.ok) {
                 const rows = await userRes.json();
-                console.log('[SYNC DEBUG] syncFromSupabase: user_id query returned', rows.length, 'rows:', JSON.stringify(rows));
+                console.log('[SYNC DEBUG] syncFromSupabase: auth_id query returned', rows.length, 'rows:', JSON.stringify(rows));
                 if (rows && rows.length > 0) {
                     player = rows[0];
                     // Adopt the canonical device_id from the existing player row
@@ -642,7 +795,7 @@ async function syncFromSupabase() {
                     }
                 }
             } else {
-                console.log('[SYNC DEBUG] syncFromSupabase: user_id query failed:', userRes.status);
+                console.log('[SYNC DEBUG] syncFromSupabase: auth_id query failed:', userRes.status);
             }
         }
 
@@ -658,8 +811,19 @@ async function syncFromSupabase() {
                 showSyncError('Could not sync streak — server returned an error.');
                 return;
             }
-            player = await response.json();
-            console.log('[SYNC DEBUG] syncFromSupabase: fallback player:', JSON.stringify(player));
+            const playerId = await response.json();
+            const playerRes = await fetch(
+                `${SUPABASE_URL}/rest/v1/players?id=eq.${playerId}&select=id,current_streak,streak,freezes,device_id&limit=1`,
+                { headers }
+            );
+            if (!playerRes.ok) {
+                showSyncError('Could not sync streak — server returned an error.');
+                return;
+            }
+            const playerRows = await playerRes.json();
+            player = playerRows && playerRows.length > 0 ? playerRows[0] : null;
+            console.log('[SYNC DEBUG] syncFromSupabase: fallback playerId:', playerId, 'player:', JSON.stringify(player));
+            if (!player) return;
         }
 
         const serverStreak = Number(player?.current_streak ?? player?.streak ?? 0);
@@ -684,18 +848,18 @@ async function syncHistoryFromSupabase() {
         const { data: { session } } = await sb.auth.getSession();
         console.log('[SYNC DEBUG] syncHistoryFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
-        // Step 1: Get player_id — prefer user_id lookup when logged in,
+        // Step 1: Get player_id — prefer auth_id lookup when logged in,
         // fall back to device_id for anonymous play
         let playerId = null;
         if (session?.user?.id) {
-            const userUrl = `${SUPABASE_URL}/rest/v1/players?user_id=eq.${session.user.id}&select=id&limit=1`;
+            const userUrl = `${SUPABASE_URL}/rest/v1/players?auth_id=eq.${session.user.id}&select=id&limit=1`;
             const userRes = await fetch(userUrl, { headers });
             if (userRes.ok) {
                 const rows = await userRes.json();
-                console.log('[SYNC DEBUG] syncHistoryFromSupabase: user_id query returned', rows.length, 'rows');
+                console.log('[SYNC DEBUG] syncHistoryFromSupabase: auth_id query returned', rows.length, 'rows');
                 if (rows && rows.length > 0) playerId = rows[0].id;
             } else {
-                console.log('[SYNC DEBUG] syncHistoryFromSupabase: user_id query failed:', userRes.status);
+                console.log('[SYNC DEBUG] syncHistoryFromSupabase: auth_id query failed:', userRes.status);
             }
         }
         if (!playerId) {
@@ -757,6 +921,78 @@ async function syncHistoryFromSupabase() {
     }
 }
 
+function buildBackfillRowsFromLocalHistory() {
+    const rows = [];
+    for (const [numStr, entry] of Object.entries(gameState.history || {})) {
+        const puzzleNum = Number(numStr);
+        if (!Number.isFinite(puzzleNum) || puzzleNum <= 0) continue;
+        if (!entry?.completed || entry.solvedOnTime === false) continue;
+
+        const moves = Number(entry.moves || 0);
+        const undos = Number(entry.undos || 0);
+        const solveTime = Number(entry.solveTime || 0);
+        const isPerfect = moves === PERFECT_MOVES && undos === 0 && !entry.hinted;
+        const isFast = isPerfect && solveTime > 0 && solveTime <= FAST_SOLVE_THRESHOLD_S;
+
+        rows.push({
+            puzzle_num: puzzleNum,
+            moves,
+            solve_time_seconds: solveTime,
+            operators: Array.isArray(entry.operators) ? entry.operators : [],
+            undos,
+            is_perfect: isPerfect,
+            is_fast: isFast
+        });
+    }
+    rows.sort((a, b) => a.puzzle_num - b.puzzle_num);
+    return rows;
+}
+
+async function backfillLocalHistoryToSupabase() {
+    const status = document.getElementById('syncStatus');
+    try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session?.user?.id) return;
+
+        const lastUserId = localStorage.getItem(LAST_USER_ID_KEY);
+        if (lastUserId && lastUserId !== session.user.id) {
+            const ok = confirm("You are signed in as a different account. Merge this device's local progress into this account?");
+            if (!ok) return;
+        }
+        localStorage.setItem(LAST_USER_ID_KEY, session.user.id);
+
+        const rows = buildBackfillRowsFromLocalHistory();
+        if (rows.length === 0) return;
+
+        if (status) {
+            status.textContent = 'Uploading history...';
+            status.className = 'sync-status';
+        }
+
+        const chunkSize = 200;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunk = rows.slice(i, i + chunkSize);
+            const { error } = await sb.rpc('backfill_daily_results', {
+                p_device_id: gameState.deviceId,
+                p_rows: chunk
+            });
+            if (error) {
+                showSyncError('History upload failed');
+                console.error('backfillLocalHistoryToSupabase failed:', error);
+                return;
+            }
+        }
+
+        if (status) {
+            status.textContent = 'History synced.';
+            status.className = 'sync-status success';
+        }
+    } catch (e) {
+        showSyncError('History upload failed');
+        console.error('backfillLocalHistoryToSupabase exception:', e);
+    }
+}
+
 // ============================================================
 // STREAK COMPUTATION FROM HISTORY (fixes streak derivation)
 // ============================================================
@@ -809,6 +1045,7 @@ sb.auth.onAuthStateChange(async (_event, session) => {
     await updateSyncUI();
     if (session) {
         await ensureCanonicalDeviceId();
+        await backfillLocalHistoryToSupabase();
         await syncFromSupabase();
         await syncHistoryFromSupabase();
         updateStreak();
@@ -2100,6 +2337,15 @@ document.getElementById('googleSignInBtn').addEventListener('click', signInWithG
 document.getElementById('otpSendBtn').addEventListener('click', sendOtpCode);
 document.getElementById('otpVerifyBtn').addEventListener('click', verifyOtpCode);
 document.getElementById('syncSignOutBtn').addEventListener('click', promptSignOut);
+document.getElementById('exportProgressBtn').addEventListener('click', exportProgressToFile);
+document.getElementById('importProgressBtn').addEventListener('click', () => {
+    document.getElementById('importProgressFile').click();
+});
+document.getElementById('importProgressFile').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    await importProgressFromFile(file);
+    e.target.value = '';
+});
 
 // Allow Enter key in OTP inputs
 document.getElementById('otpEmailInput').addEventListener('keydown', (e) => {
@@ -2886,6 +3132,7 @@ async function boot() {
 
     if (session) {
         await ensureCanonicalDeviceId();
+        await backfillLocalHistoryToSupabase();
     }
 
     await syncFromSupabase();
