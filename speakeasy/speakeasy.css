@@ -1,0 +1,513 @@
+/* =============================================================
+   SPEAKEASY — After-Hours hard modes for Make24
+   Dark-theme variables match the base app's :root tokens.
+   All selectors are prefixed with .spk- to avoid collisions.
+   ============================================================= */
+
+/* ---------------------------------------------------------------
+   OVERLAY  (full-screen modal layer, z-index above victory card)
+   --------------------------------------------------------------- */
+.spk-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    background: rgba(0, 0, 0, 0.75);
+    align-items: flex-end;     /* sheet rises from bottom */
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.spk-overlay.spk-visible {
+    display: flex;
+    animation: spk-fade-in 0.2s ease-out;
+}
+@keyframes spk-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------
+   BOTTOM SHEET  (speakeasy menu + game screen wrapper)
+   --------------------------------------------------------------- */
+.spk-sheet {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-width: 440px;
+    max-height: 92dvh;
+    overflow-y: auto;
+    padding: 20px 20px 32px;
+    padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+    position: relative;
+    animation: spk-sheet-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes spk-sheet-in {
+    from { transform: translateY(40px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Close button (×) top-right of sheet */
+.spk-close-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+}
+.spk-close-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.06); }
+
+/* ---------------------------------------------------------------
+   MENU HEADER
+   --------------------------------------------------------------- */
+.spk-menu-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+.spk-menu-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 4px;
+}
+.spk-menu-subtitle {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+.spk-menu-digits {
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem;
+    color: #22d3ee;
+    letter-spacing: 0.05em;
+}
+
+/* ---------------------------------------------------------------
+   MODE CARDS
+   --------------------------------------------------------------- */
+.spk-mode-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.spk-mode-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 16px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    width: 100%;
+    color: inherit;
+}
+.spk-mode-card:hover,
+.spk-mode-card:focus-visible {
+    border-color: #22d3ee;
+    background: #172032;
+    outline: none;
+}
+.spk-mode-icon {
+    font-size: 1.75rem;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.spk-mode-info {
+    flex: 1;
+    min-width: 0;
+}
+.spk-mode-name {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 3px;
+}
+.spk-mode-desc {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+.spk-mode-pb {
+    font-size: 0.75rem;
+    color: #22d3ee;
+    font-weight: 500;
+}
+
+/* ---------------------------------------------------------------
+   GAME SCREEN  (fills the overlay, replaces the sheet)
+   --------------------------------------------------------------- */
+.spk-game-screen {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 440px;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    background: #0f172a;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* When game screen is active, sheet fills whole overlay */
+.spk-overlay.spk-visible .spk-game-screen {
+    border-radius: 0;
+}
+
+/* ---------------------------------------------------------------
+   TOP BAR  (back btn | mode label | timer)
+   --------------------------------------------------------------- */
+.spk-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1e293b;
+    background: #0f172a;
+    z-index: 2;
+}
+.spk-back-btn {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+}
+.spk-back-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+
+.spk-game-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    flex: 1;
+    text-align: center;
+    padding: 0 8px;
+}
+.spk-timer {
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #22d3ee;
+    min-width: 36px;
+    text-align: right;
+    white-space: nowrap;
+}
+.spk-timer.spk-timer-warn {
+    color: #ef4444;
+    animation: spk-pulse 0.6s ease-in-out infinite alternate;
+}
+@keyframes spk-pulse {
+    from { opacity: 1; }
+    to   { opacity: 0.5; }
+}
+
+/* ---------------------------------------------------------------
+   MARKET MAKER META ROW  (score + rule tag)
+   --------------------------------------------------------------- */
+.spk-mm-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    flex-shrink: 0;
+}
+.spk-mm-score {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+.spk-mm-rule {
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+/* ---------------------------------------------------------------
+   GAME BOARD  (cards + operators + undo)
+   --------------------------------------------------------------- */
+.spk-board {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+    z-index: 2;    /* above water overlay */
+    position: relative;
+}
+
+/* Card grid — 2 columns on mobile */
+.spk-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 280px;
+}
+.spk-card {
+    background: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 14px;
+    color: #f1f5f9;
+    font-family: 'Space Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    height: 72px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.spk-card:hover  { border-color: #22d3ee; background: #172032; }
+.spk-card-sel    { border-color: #22d3ee; background: #0c3a4a; transform: scale(1.05); }
+
+/* Operator strip */
+.spk-op-strip {
+    display: flex;
+    gap: 10px;
+}
+.spk-op-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    color: #f1f5f9;
+    font-size: 1.25rem;
+    font-weight: 700;
+    width: 56px;
+    height: 52px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.spk-op-btn:hover  { border-color: #22d3ee; background: #172032; }
+.spk-op-btn:active { background: #0c3a4a; transform: scale(0.96); }
+
+/* Undo button */
+.spk-undo-btn {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: color 0.15s, background 0.15s;
+}
+.spk-undo-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+
+/* ---------------------------------------------------------------
+   WATER OVERLAY  (Flood mode — rises from bottom, behind cards)
+   --------------------------------------------------------------- */
+.spk-water {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 0%;
+    background: linear-gradient(
+        to top,
+        rgba(34, 211, 238, 0.35) 0%,
+        rgba(34, 211, 238, 0.18) 55%,
+        rgba(34, 211, 238, 0.04) 100%
+    );
+    transition: height 0.4s linear;
+    pointer-events: none;
+    z-index: 1;    /* below .spk-board (z-index: 2) */
+    border-top: 1px solid rgba(34, 211, 238, 0.25);
+}
+/* Reduced-motion: skip height animation */
+@media (prefers-reduced-motion: reduce) {
+    .spk-water { transition: none; }
+}
+
+/* ---------------------------------------------------------------
+   FEEDBACK FLASH  (Market Maker inline micro-feedback)
+   --------------------------------------------------------------- */
+.spk-feedback {
+    min-height: 24px;
+    text-align: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 16px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+.spk-feedback.spk-fb-show   { opacity: 1; }
+.spk-feedback.spk-fb-new    { color: #10b981; }
+.spk-feedback.spk-fb-dupe   { color: #f59e0b; }
+.spk-feedback.spk-fb-bad    { color: #ef4444; }
+
+/* ---------------------------------------------------------------
+   LEDGER  (Market Maker — chips of quoted numbers)
+   --------------------------------------------------------------- */
+.spk-ledger {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 16px 16px;
+    justify-content: center;
+    overflow-y: auto;
+    max-height: 90px;
+    flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------
+   CHIPS  (used in ledger + result screen)
+   --------------------------------------------------------------- */
+.spk-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0f2230;
+    border: 1px solid #22d3ee;
+    color: #22d3ee;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    min-width: 30px;
+}
+
+/* ---------------------------------------------------------------
+   RESULT SCREEN  (win / fail / end)
+   --------------------------------------------------------------- */
+.spk-result {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px 24px;
+    text-align: center;
+    animation: spk-fade-in 0.3s ease-out;
+}
+.spk-result-fail .spk-result-icon { filter: hue-rotate(200deg); }
+
+.spk-result-icon {
+    font-size: 3rem;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.spk-result-heading {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+.spk-result-stat {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.125rem;
+    color: #22d3ee;
+    font-weight: 700;
+}
+.spk-result-new-pb {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #fbbf24;
+}
+.spk-result-prev-pb {
+    font-size: 0.8125rem;
+    color: #64748b;
+}
+.spk-result-ledger {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+    max-width: 300px;
+    margin-top: 4px;
+}
+.spk-result-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 240px;
+    margin-top: 12px;
+}
+
+/* ---------------------------------------------------------------
+   BUTTONS  (result / menu actions)
+   --------------------------------------------------------------- */
+.spk-btn {
+    border-radius: 12px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    padding: 12px 20px;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s, opacity 0.15s, transform 0.1s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    width: 100%;
+}
+.spk-btn:active { transform: scale(0.97); }
+
+.spk-btn-primary {
+    background: #22d3ee;
+    color: #0f172a;
+}
+.spk-btn-primary:hover { background: #0891b2; }
+
+.spk-btn-share {
+    background: #0f172a;
+    color: #22d3ee;
+    border: 1px solid #22d3ee;
+}
+.spk-btn-share:hover { background: #0c3a4a; }
+
+.spk-btn-ghost {
+    background: none;
+    color: #94a3b8;
+    border: 1px solid #334155;
+}
+.spk-btn-ghost:hover { color: #f1f5f9; border-color: #64748b; }
+
+/* ---------------------------------------------------------------
+   SECRET DOOR  (🔑 key button in the victory card)
+   --------------------------------------------------------------- */
+.spk-key-btn {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    background: none;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 6px;
+    border-radius: 8px;
+    line-height: 1;
+    transition: opacity 0.2s, background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    z-index: 1;
+}
+.spk-key-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.07);
+}
