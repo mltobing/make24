@@ -1,25 +1,29 @@
 /**
  * speakeasy.js — After-Hours hard modes for Make24
  *
- * Gated behind isRegistered(). Zero modifications required to app.js or style.css.
+ * Gated behind isRegistered(). Zero modifications to app.js or style.css.
  * Uses a MutationObserver to watch the victory card and inject the 🔑 entry point.
  *
  * Modes:
- *   1. After-Hours Flood  — solve 24 before the room fills (45s timer, rising water)
- *   2. Market Maker       — quote as many distinct integers 1–60 as you can in 60s
+ *   1. After-Hours Flood  — solve 24 before the room fills
+ *   2. Market Maker       — quote as many distinct integers 1–60 as you can
  *
- * Storage keys (never overlap with base-game keys):
- *   make24_speakeasy_flood_bestMs   — best remaining milliseconds in Flood
- *   make24_speakeasy_mm_bestQuotes  — best quote count in Market Maker
+ * Timer modes (toggled in the menu, persisted in localStorage):
+ *   Rush  → Flood 45s,  Market Maker 60s
+ *   Chill → Flood 3min, Market Maker 5min
+ *
+ * Storage keys (never overlap base-game keys):
+ *   make24_speakeasy_flood_bestMs   — Flood: best remaining ms
+ *   make24_speakeasy_mm_bestQuotes  — Market Maker: best quote count
+ *   make24_speakeasy_timer          — "rush" | "chill"
  *
  * Registration gate:
- *   • URL param  ?speakeasy=1        → always registered (dev/testing)
+ *   • URL param  ?speakeasy=1
  *   • localStorage make24_registered = "1"
  *   • Supabase session (wired into existing auth)
  *
- * Console debug helper (local testing only):
- *   window.make24DebugSetRegistered(true)   → enable
- *   window.make24DebugSetRegistered(false)  → disable
+ * Console helper:
+ *   window.make24DebugSetRegistered(true/false)
  */
 (function () {
     'use strict';
@@ -27,28 +31,33 @@
     // ============================================================
     // CONSTANTS
     // ============================================================
-    const FLOOD_DURATION_MS  = 45000;
-    const MM_DURATION_MS     = 60000;
-    const MM_MAX_QUOTE       = 60;
-    const FLOAT_EPS          = 0.0001;
-    const WRONG_RESET_MS     = 800;
-    const QUOTE_RESET_MS     = 600;
+    const DURATIONS = {
+        rush:  { flood: 45000,  mm:  60000 },
+        chill: { flood: 180000, mm: 300000 }
+    };
+    const MM_MAX_QUOTE    = 60;
+    const FLOAT_EPS       = 0.0001;
+    const WRONG_RESET_MS  = 800;
+    const QUOTE_RESET_MS  = 600;
 
-    const SPK_FLOOD_PB_KEY   = 'make24_speakeasy_flood_bestMs';
-    const SPK_MM_PB_KEY      = 'make24_speakeasy_mm_bestQuotes';
+    const FLOOD_PB_KEY    = 'make24_speakeasy_flood_bestMs';
+    const MM_PB_KEY       = 'make24_speakeasy_mm_bestQuotes';
+    const TIMER_MODE_KEY  = 'make24_speakeasy_timer';
+
+    // Diamond slot names in order 0–3 (matches base game: top/left/right/bottom)
+    const SLOT_CLASSES = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
 
     // ============================================================
-    // CALC ENGINE  (local copy; also matches window.calc in app.js)
+    // TIMER MODE
     // ============================================================
-    function calc(a, op, b) {
-        switch (op) {
-            case '+': return a + b;
-            case '-': return a - b;
-            case '*': return a * b;
-            case '/': return b === 0 ? null : a / b;
-        }
-        return null;
+    function getTimerMode() {
+        return localStorage.getItem(TIMER_MODE_KEY) === 'chill' ? 'chill' : 'rush';
     }
+    function setTimerMode(mode) {
+        localStorage.setItem(TIMER_MODE_KEY, mode);
+    }
+    function getFloodDuration() { return DURATIONS[getTimerMode()].flood; }
+    function getMmDuration()    { return DURATIONS[getTimerMode()].mm;    }
 
     // ============================================================
     // GATE
@@ -76,7 +85,6 @@
         return false;
     }
 
-    // Console helper — local/dev only
     window.make24DebugSetRegistered = function (val) {
         if (val) {
             localStorage.setItem('make24_registered', '1');
@@ -92,26 +100,34 @@
     // ============================================================
     // STORAGE
     // ============================================================
-    function getFloodPB()           { const v = localStorage.getItem(SPK_FLOOD_PB_KEY);  return v ? parseInt(v, 10) : null; }
-    function getMmPB()              { const v = localStorage.getItem(SPK_MM_PB_KEY);      return v ? parseInt(v, 10) : null; }
+    function getFloodPB()      { const v = localStorage.getItem(FLOOD_PB_KEY); return v ? parseInt(v, 10) : null; }
+    function getMmPB()         { const v = localStorage.getItem(MM_PB_KEY);    return v ? parseInt(v, 10) : null; }
+    function saveFloodPB(ms)   { const c = getFloodPB(); if (c === null || ms    > c) localStorage.setItem(FLOOD_PB_KEY, ms);    }
+    function saveMmPB(count)   { const c = getMmPB();    if (c === null || count > c) localStorage.setItem(MM_PB_KEY, count); }
 
-    function saveFloodPB(ms) {
-        const cur = getFloodPB();
-        if (cur === null || ms > cur) localStorage.setItem(SPK_FLOOD_PB_KEY, String(ms));
-    }
-    function saveMmPB(count) {
-        const cur = getMmPB();
-        if (cur === null || count > cur) localStorage.setItem(SPK_MM_PB_KEY, String(count));
+    // ============================================================
+    // CALC  (local copy matching app.js)
+    // ============================================================
+    function calc(a, op, b) {
+        switch (op) {
+            case '+': return a + b;
+            case '-': return a - b;
+            case '*': return a * b;
+            case '/': return b === 0 ? null : a / b;
+        }
+        return null;
     }
 
     // ============================================================
-    // ROUND ENGINE  (pure-ish; state objects are plain JS)
+    // ROUND ENGINE  (pure functions)
     // ============================================================
+    // Cards: { value, slot (0-3), used }
+    // Slot maps: 0=top, 1=left, 2=right, 3=bottom (base-game convention)
     function createRound(digits) {
         return {
             cards:    digits.map((v, i) => ({ value: v, slot: i, used: false })),
-            selected: [],
-            history:  []   // stack of card-array snapshots for undo
+            selected: [],   // up to 2 card indices
+            history:  []    // stack of card-array snapshots for undo
         };
     }
 
@@ -125,13 +141,11 @@
         return { ...round, selected: sel };
     }
 
-    // Returns new round or null on invalid (div-by-zero)
+    // Returns new round, or null on division-by-zero
     function roundApplyOp(round, op) {
         if (round.selected.length !== 2) return null;
         const [i, j] = round.selected;
-        const a = round.cards[i].value;
-        const b = round.cards[j].value;
-        const result = calc(a, op, b);
+        const result = calc(round.cards[i].value, op, round.cards[j].value);
         if (result === null) return null;
 
         const snapshot = round.cards.map(c => ({ ...c }));
@@ -162,11 +176,11 @@
     }
 
     // ============================================================
-    // TODAY'S DIGITS  (reuse app.js globals; fallback if not present)
+    // TODAY'S DIGITS
     // ============================================================
     function getTodayDigits() {
         try {
-            const puzzleNum = window.getTodayPuzzleNumber
+            const pNum = window.getTodayPuzzleNumber
                 ? window.getTodayPuzzleNumber()
                 : (() => {
                     const epoch = new Date('2025-01-01T00:00:00Z');
@@ -174,35 +188,34 @@
                     const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                     return Math.floor((local - epoch) / 86400000) + 1;
                 })();
-            if (window.generatePuzzle) return window.generatePuzzle(puzzleNum);
-        } catch (_) { /* fallback below */ }
-        return [2, 3, 4, 4];
+            return window.generatePuzzle ? window.generatePuzzle(pNum) : [2, 3, 4, 4];
+        } catch (_) { return [2, 3, 4, 4]; }
     }
 
     // ============================================================
     // FORMAT HELPERS
     // ============================================================
     function fmtMs(ms) {
-        const s = Math.ceil(ms / 1000);
-        return s + 's';
+        const totalS = Math.ceil(ms / 1000);
+        if (totalS >= 60) {
+            const m = Math.floor(totalS / 60);
+            const s = totalS % 60;
+            return s > 0 ? `${m}m ${s}s` : `${m}m`;
+        }
+        return totalS + 's';
     }
 
-    function fmtVal(n) {
-        if (n === null) return '?';
-        if (Number.isInteger(n)) return String(n);
-        // Try simple fraction display
-        for (const d of [2, 3, 4, 5, 6, 7, 8, 9, 10, 12]) {
-            const num = n * d;
-            if (Math.abs(Math.round(num) - num) < 0.001) return `${Math.round(num)}/${d}`;
-        }
-        return n.toFixed(2);
+    // Render a number into a DOM node (reuses app.js fraction renderer if available)
+    function makeNumberNode(n) {
+        if (window.formatNumberHTML) return window.formatNumberHTML(n);
+        return document.createTextNode(Number.isInteger(n) ? String(n) : n.toFixed(2));
     }
 
     // ============================================================
     // SHARE
     // ============================================================
     function shareText(text) {
-        const pub = (window.APP_CONFIG && window.APP_CONFIG.publicUrl) || 'make24.app';
+        const pub  = (window.APP_CONFIG && window.APP_CONFIG.publicUrl) || 'make24.app';
         const full = text + '\n' + pub;
         if (navigator.share) {
             navigator.share({ text: full }).catch(() => clipText(full));
@@ -211,8 +224,8 @@
 
     function clipText(text) {
         navigator.clipboard.writeText(text).then(
-            () => { if (window.showToast) window.showToast('Copied to clipboard!'); },
-            () => { if (window.showToast) window.showToast('Copied to clipboard!'); }
+            () => { if (window.showToast) window.showToast('Copied!'); },
+            () => { if (window.showToast) window.showToast('Copied!'); }
         );
     }
 
@@ -240,13 +253,92 @@
     function hideOverlay() {
         if (!_overlay) return;
         _overlay.classList.remove('spk-visible');
-        // Wipe content after slide-out animation
         setTimeout(() => { if (_overlay) _overlay.innerHTML = ''; }, 350);
     }
 
     // ============================================================
-    // SPEAKEASY MENU  (mode selector)
+    // DIAMOND BOARD RENDERER
+    // Reuses base-game CSS classes: .card  .selected  .first  .second
+    // so cards look pixel-identical to the daily puzzle.
     // ============================================================
+    function buildDiamondGrid() {
+        const grid = document.createElement('div');
+        grid.className = 'spk-diamond-grid';
+        SLOT_CLASSES.forEach((cls) => {
+            const slot = document.createElement('div');
+            slot.className = 'spk-slot ' + cls;
+            grid.appendChild(slot);
+        });
+        return grid;
+    }
+
+    function renderBoard(el, round) {
+        // Update each slot's card
+        SLOT_CLASSES.forEach((cls, slotIdx) => {
+            const slotEl = el.querySelector('.' + cls);
+            if (!slotEl) return;
+
+            // The "live" card for this slot: latest non-used card at this slot index
+            const card = [...round.cards].reverse().find(c => c.slot === slotIdx && !c.used);
+            const cardIdx = card ? round.cards.indexOf(card) : -1;
+
+            // Keep existing card element if it represents the same card (avoids flicker)
+            const existing = slotEl.querySelector('.card');
+            const existingIdx = existing ? parseInt(existing.dataset.cardIdx, 10) : -1;
+
+            if (!card) {
+                slotEl.innerHTML = '';
+                return;
+            }
+
+            const isFirst  = round.selected[0] === cardIdx;
+            const isSecond = round.selected[1] === cardIdx;
+            const wantedClass = 'card' +
+                (isFirst  ? ' selected first'  : '') +
+                (isSecond ? ' selected second' : '');
+
+            if (existingIdx === cardIdx) {
+                // Same card — just update selection classes
+                existing.className = wantedClass;
+            } else {
+                // New card (after merge / undo)
+                slotEl.innerHTML = '';
+                const cardEl = document.createElement('div');
+                cardEl.className = wantedClass;
+                cardEl.dataset.cardIdx = cardIdx;
+                cardEl.appendChild(makeNumberNode(card.value));
+                slotEl.appendChild(cardEl);
+            }
+        });
+
+        // Operator overlay: show when exactly 2 cards selected
+        const opOverlay = el.querySelector('.spk-op-overlay');
+        if (opOverlay) opOverlay.classList.toggle('spk-op-show', round.selected.length === 2);
+
+        // Undo button visibility
+        const undoBtn = el.querySelector('.spk-undo-btn');
+        if (undoBtn) undoBtn.style.visibility = round.history.length > 0 ? 'visible' : 'hidden';
+    }
+
+    // ============================================================
+    // SPEAKEASY MENU
+    // ============================================================
+    function buildTimerToggleHTML() {
+        const mode = getTimerMode();
+        return `
+<div class="spk-timer-toggle" id="spkTimerToggle" role="group" aria-label="Timer speed">
+  <button class="spk-tt-btn${mode === 'rush'  ? ' spk-tt-active' : ''}" data-mode="rush">Rush</button>
+  <button class="spk-tt-btn${mode === 'chill' ? ' spk-tt-active' : ''}" data-mode="chill">Chill</button>
+</div>
+<div class="spk-timer-desc" id="spkTimerDesc">${timerDesc(mode)}</div>`;
+    }
+
+    function timerDesc(mode) {
+        return mode === 'rush'
+            ? 'Flood 45s · Market 60s'
+            : 'Flood 3 min · Market 5 min';
+    }
+
     function showSpeakeasyMenu() {
         const digits = getTodayDigits();
         const pbFlood = getFloodPB();
@@ -261,6 +353,7 @@
     <div class="spk-menu-subtitle">Same digits, different game.</div>
     <div class="spk-menu-digits">${digits.join(' · ')}</div>
   </div>
+  ${buildTimerToggleHTML()}
   <div class="spk-mode-list">
     <button class="spk-mode-card" id="spkFloodBtn">
       <div class="spk-mode-icon">💧</div>
@@ -274,12 +367,24 @@
       <div class="spk-mode-icon">📈</div>
       <div class="spk-mode-info">
         <div class="spk-mode-name">Market Maker</div>
-        <div class="spk-mode-desc">Quote as many different numbers as you can in 60s.</div>
+        <div class="spk-mode-desc">Quote as many different numbers as you can.</div>
         <div class="spk-mode-pb">${pbMm !== null ? 'PB: ' + pbMm + ' quotes' : 'No record yet'}</div>
       </div>
     </button>
   </div>
 </div>`;
+
+            // Timer toggle
+            el.querySelector('#spkTimerToggle').addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-mode]');
+                if (!btn) return;
+                const mode = btn.dataset.mode;
+                setTimerMode(mode);
+                el.querySelectorAll('.spk-tt-btn').forEach(b =>
+                    b.classList.toggle('spk-tt-active', b.dataset.mode === mode));
+                el.querySelector('#spkTimerDesc').textContent = timerDesc(mode);
+            });
+
             el.querySelector('.spk-close-btn').addEventListener('click', hideOverlay);
             el.querySelector('#spkFloodBtn').addEventListener('click', () => startFloodMode(digits));
             el.querySelector('#spkMmBtn').addEventListener('click',    () => startMarketMode(digits));
@@ -288,50 +393,80 @@
     }
 
     // ============================================================
-    // SHARED GAME BOARD RENDERER  (event-delegation friendly)
+    // SHARED GAME SCREEN HTML
+    // (operator overlay lives inside .spk-arena so it's scoped)
     // ============================================================
-    function renderBoard(el, round) {
-        const boardEl = el.querySelector('.spk-board');
-        if (!boardEl) return;
-        boardEl.innerHTML = '';
+    function buildGameScreenHTML(titleHTML, metaRowHTML, extraOverlayHTML) {
+        return `
+<div class="spk-game-screen">
+  <div class="spk-topbar">
+    <button class="spk-back-btn" aria-label="Back">&#8592; Back</button>
+    <span class="spk-game-label">${titleHTML}</span>
+    <span class="spk-timer" id="spkTimer">--</span>
+  </div>
+  ${metaRowHTML}
+  <div class="spk-arena">
+    <div class="spk-diamond-grid" id="spkGrid">
+      <div class="spk-slot spk-slot-top"></div>
+      <div class="spk-slot spk-slot-left"></div>
+      <div class="spk-slot spk-slot-right"></div>
+      <div class="spk-slot spk-slot-bottom"></div>
+    </div>
+    <div class="spk-undo-row">
+      <button class="spk-undo-btn" style="visibility:hidden" data-action="undo">↶ Undo</button>
+    </div>
+    <!-- operator overlay: same 2×2 circular layout as base game -->
+    <div class="spk-op-overlay" id="spkOpOverlay">
+      <div class="operators-grid">
+        <button class="op-btn" data-op="+">+</button>
+        <button class="op-btn" data-op="-">−</button>
+        <button class="op-btn" data-op="*">×</button>
+        <button class="op-btn" data-op="/">÷</button>
+      </div>
+    </div>
+    ${extraOverlayHTML}
+  </div>
+</div>`;
+    }
 
-        const remaining = roundRemaining(round);
+    // Wire up shared arena interactions (cards + operators + undo + back)
+    // onOp(round, op) → newRound | null
+    // onResolve(round) → called when only 1 card left
+    function wireArena(el, getRound, setRound, onResolve) {
+        const arena = el.querySelector('.spk-arena');
+        if (!arena) return;
 
-        // Card grid
-        const grid = document.createElement('div');
-        grid.className = 'spk-cards-grid';
-        remaining.forEach((card) => {
-            const idx = round.cards.indexOf(card);
-            const btn = document.createElement('button');
-            btn.className = 'spk-card' + (round.selected.includes(idx) ? ' spk-card-sel' : '');
-            btn.textContent = fmtVal(card.value);
-            btn.dataset.cardIdx = idx;
-            grid.appendChild(btn);
+        arena.addEventListener('click', (e) => {
+            const cardEl   = e.target.closest('[data-card-idx]');
+            const opBtn    = e.target.closest('[data-op]');
+            const undoBtn  = e.target.closest('[data-action="undo"]');
+            const opOvl    = e.target.closest('.spk-op-overlay');
+
+            if (undoBtn) {
+                setRound(roundUndo(getRound()));
+                renderBoard(el, getRound());
+                return;
+            }
+            if (cardEl) {
+                setRound(roundSelectCard(getRound(), parseInt(cardEl.dataset.cardIdx, 10)));
+                renderBoard(el, getRound());
+                return;
+            }
+            if (opBtn) {
+                const next = roundApplyOp(getRound(), opBtn.dataset.op);
+                if (!next) return;
+                setRound(next);
+                renderBoard(el, getRound());
+                if (roundRemaining(next).length === 1) onResolve(next);
+                return;
+            }
+            // Tap overlay backdrop (not a button) → deselect
+            if (opOvl && !opBtn) {
+                const r = getRound();
+                setRound({ ...r, selected: [] });
+                renderBoard(el, getRound());
+            }
         });
-        boardEl.appendChild(grid);
-
-        // Operator strip — only when exactly 2 cards selected
-        if (round.selected.length === 2) {
-            const strip = document.createElement('div');
-            strip.className = 'spk-op-strip';
-            ['+', '-', '*', '/'].forEach((op) => {
-                const btn = document.createElement('button');
-                btn.className = 'spk-op-btn';
-                btn.dataset.op = op;
-                btn.textContent = op === '*' ? '×' : op === '/' ? '÷' : op;
-                strip.appendChild(btn);
-            });
-            boardEl.appendChild(strip);
-        }
-
-        // Undo button
-        if (round.history.length > 0) {
-            const ub = document.createElement('button');
-            ub.className = 'spk-undo-btn';
-            ub.dataset.action = 'undo';
-            ub.textContent = '↶ Undo';
-            boardEl.appendChild(ub);
-        }
     }
 
     // ============================================================
@@ -343,22 +478,20 @@
         let rafId    = null;
         let finished = false;
 
+        const duration = getFloodDuration();
+
         showOverlay((el) => {
-            el.innerHTML = `
-<div class="spk-game-screen">
-  <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Back">&#8592; Back</button>
-    <span class="spk-game-label">After&#8209;Hours Flood</span>
-    <span class="spk-timer" id="spkFlTimer">45s</span>
-  </div>
-  <div class="spk-board" id="spkFlBoard"></div>
-  <div class="spk-water" id="spkWater"></div>
-</div>`;
+            el.innerHTML = buildGameScreenHTML(
+                'After&#8209;Hours Flood',
+                '', // no meta row for flood
+                '<div class="spk-water" id="spkWater"></div>'
+            );
 
             const screen  = el.querySelector('.spk-game-screen');
-            const timerEl = el.querySelector('#spkFlTimer');
+            const timerEl = el.querySelector('#spkTimer');
             const waterEl = el.querySelector('#spkWater');
-            const boardEl = el.querySelector('#spkFlBoard');
+
+            timerEl.textContent = fmtMs(duration);
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
                 finished = true;
@@ -366,58 +499,39 @@
                 showSpeakeasyMenu();
             });
 
-            // Event delegation on the board div
-            boardEl.addEventListener('click', (e) => {
-                if (finished) return;
-
-                const cardIdx  = e.target.closest('[data-card-idx]')?.dataset.cardIdx;
-                const op       = e.target.closest('[data-op]')?.dataset.op;
-                const action   = e.target.closest('[data-action]')?.dataset.action;
-
-                if (action === 'undo') {
-                    round = roundUndo(round);
-                    renderBoard(el, round);
-                    return;
-                }
-                if (cardIdx !== undefined) {
-                    round = roundSelectCard(round, parseInt(cardIdx, 10));
-                    renderBoard(el, round);
-                    return;
-                }
-                if (op) {
-                    const next = roundApplyOp(round, op);
-                    if (!next) return;
-                    round = next;
-                    renderBoard(el, round);
-
-                    if (roundIsSolved(round)) {
+            let _round = round;
+            wireArena(
+                el,
+                () => _round,
+                (r) => { _round = r; round = r; },
+                (resolved) => {
+                    if (finished) return;
+                    if (roundIsSolved(resolved)) {
                         finished = true;
                         cancelAnimationFrame(rafId);
-                        const elapsed    = Date.now() - started;
-                        const remaining  = Math.max(0, FLOOD_DURATION_MS - elapsed);
+                        const remaining = Math.max(0, duration - (Date.now() - started));
                         saveFloodPB(remaining);
                         _showFloodWin(screen, remaining);
-                    } else if (roundRemaining(round).length === 1) {
-                        // Wrong answer — reset after short delay
+                    } else {
+                        // Wrong answer: reset after short delay
                         const snap = [...digits];
                         setTimeout(() => {
                             if (finished) return;
-                            round = createRound(snap);
-                            renderBoard(el, round);
+                            _round = createRound(snap);
+                            round  = _round;
+                            renderBoard(el, _round);
                         }, WRONG_RESET_MS);
                     }
-                    return;
                 }
-            });
+            );
 
-            // Start timer
-            started = Date.now();
             renderBoard(el, round);
+            started = Date.now();
 
             function tick() {
                 if (finished) return;
-                const elapsed    = Date.now() - started;
-                const remaining  = FLOOD_DURATION_MS - elapsed;
+                const elapsed   = Date.now() - started;
+                const remaining = duration - elapsed;
 
                 if (remaining <= 0) {
                     finished = true;
@@ -427,11 +541,9 @@
                     return;
                 }
 
-                const pct = (elapsed / FLOOD_DURATION_MS) * 100;
-                waterEl.style.height = pct.toFixed(1) + '%';
+                waterEl.style.height = ((elapsed / duration) * 100).toFixed(1) + '%';
                 timerEl.textContent  = fmtMs(remaining);
-                if (remaining < 10000) timerEl.classList.add('spk-timer-warn');
-
+                timerEl.classList.toggle('spk-timer-warn', remaining < 10000);
                 rafId = requestAnimationFrame(tick);
             }
             rafId = requestAnimationFrame(tick);
@@ -439,27 +551,26 @@
     }
 
     function _showFloodWin(screen, remainingMs) {
-        const pb    = getFloodPB();
-        const isPB  = pb !== null && remainingMs >= pb;
+        const pb   = getFloodPB();
+        const isPB = pb !== null && remainingMs >= pb;
         screen.innerHTML = `
 <div class="spk-result">
   <div class="spk-result-icon">💧</div>
   <div class="spk-result-heading">Survived!</div>
   <div class="spk-result-stat">${fmtMs(remainingMs)} remaining</div>
-  ${isPB
-    ? '<div class="spk-result-new-pb">New best!</div>'
-    : (pb !== null ? `<div class="spk-result-prev-pb">Best: ${fmtMs(pb)} left</div>` : '')}
+  ${isPB  ? '<div class="spk-result-new-pb">New best!</div>'
+          : (pb !== null ? `<div class="spk-result-prev-pb">Best: ${fmtMs(pb)} left</div>` : '')}
   <div class="spk-result-actions">
-    <button class="spk-btn spk-btn-share" id="spkFlShareBtn">Share</button>
-    <button class="spk-btn spk-btn-primary" id="spkFlRetryBtn">Play Again</button>
-    <button class="spk-btn spk-btn-ghost"   id="spkFlBackBtn">Back</button>
+    <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
+    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Play Again</button>
+    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Back</button>
   </div>
 </div>`;
-        screen.querySelector('#spkFlShareBtn').addEventListener('click', () =>
+        screen.querySelector('#spkShareBtn').addEventListener('click', () =>
             shareText(`I survived After-Hours Flood with ${fmtMs(remainingMs)} left. Can you?`));
-        screen.querySelector('#spkFlRetryBtn').addEventListener('click', () =>
+        screen.querySelector('#spkRetryBtn').addEventListener('click', () =>
             startFloodMode(getTodayDigits()));
-        screen.querySelector('#spkFlBackBtn').addEventListener('click', showSpeakeasyMenu);
+        screen.querySelector('#spkBackBtn').addEventListener('click', showSpeakeasyMenu);
     }
 
     function _showFloodFail(screen, digits) {
@@ -470,13 +581,13 @@
   <div class="spk-result-heading">Flooded.</div>
   ${pb !== null ? `<div class="spk-result-prev-pb">Best: ${fmtMs(pb)} left</div>` : ''}
   <div class="spk-result-actions">
-    <button class="spk-btn spk-btn-primary" id="spkFlRetryBtn">Retry</button>
-    <button class="spk-btn spk-btn-ghost"   id="spkFlBackBtn">Back</button>
+    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Retry</button>
+    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Back</button>
   </div>
 </div>`;
-        screen.querySelector('#spkFlRetryBtn').addEventListener('click', () =>
+        screen.querySelector('#spkRetryBtn').addEventListener('click', () =>
             startFloodMode(getTodayDigits()));
-        screen.querySelector('#spkFlBackBtn').addEventListener('click', showSpeakeasyMenu);
+        screen.querySelector('#spkBackBtn').addEventListener('click', showSpeakeasyMenu);
     }
 
     // ============================================================
@@ -491,29 +602,30 @@
         let finished = false;
         let fbTimer  = null;
 
+        const duration = getMmDuration();
+
         showOverlay((el) => {
-            el.innerHTML = `
-<div class="spk-game-screen">
-  <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Back">&#8592; Back</button>
-    <span class="spk-game-label">Market Maker</span>
-    <span class="spk-timer" id="spkMmTimer">60s</span>
-  </div>
-  <div class="spk-mm-meta">
-    <span class="spk-mm-score" id="spkMmScore">Quotes: 0</span>
-    <span class="spk-mm-rule">Integers 1–${MM_MAX_QUOTE} count</span>
-  </div>
-  <div class="spk-board" id="spkMmBoard"></div>
-  <div class="spk-feedback" id="spkMmFb"></div>
-  <div class="spk-ledger" id="spkMmLedger"></div>
-</div>`;
+            el.innerHTML = buildGameScreenHTML(
+                'Market Maker',
+                `<div class="spk-mm-meta">
+                   <span class="spk-mm-score" id="spkMmScore">Quotes: 0</span>
+                   <span class="spk-mm-rule">Integers 1–${MM_MAX_QUOTE} count</span>
+                 </div>`,
+                `<div class="spk-feedback" id="spkFb"></div>`
+            );
 
             const screen   = el.querySelector('.spk-game-screen');
-            const timerEl  = el.querySelector('#spkMmTimer');
+            const timerEl  = el.querySelector('#spkTimer');
             const scoreEl  = el.querySelector('#spkMmScore');
-            const fbEl     = el.querySelector('#spkMmFb');
-            const ledgerEl = el.querySelector('#spkMmLedger');
-            const boardEl  = el.querySelector('#spkMmBoard');
+            const fbEl     = el.querySelector('#spkFb');
+
+            timerEl.textContent = fmtMs(duration);
+
+            // Ledger lives below the arena
+            const ledgerEl = document.createElement('div');
+            ledgerEl.className = 'spk-ledger';
+            ledgerEl.id = 'spkLedger';
+            screen.appendChild(ledgerEl);
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
                 finished = true;
@@ -530,71 +642,50 @@
             }
 
             function renderLedger() {
-                const sorted = [...quoted].sort((a, b) => a - b);
-                ledgerEl.innerHTML = sorted.map(n => `<span class="spk-chip">${n}</span>`).join('');
+                ledgerEl.innerHTML = [...quoted].sort((a, b) => a - b)
+                    .map(n => `<span class="spk-chip">${n}</span>`).join('');
             }
 
-            boardEl.addEventListener('click', (e) => {
-                if (finished) return;
-                const cardIdx  = e.target.closest('[data-card-idx]')?.dataset.cardIdx;
-                const op       = e.target.closest('[data-op]')?.dataset.op;
-                const action   = e.target.closest('[data-action]')?.dataset.action;
+            let _round = round;
+            wireArena(
+                el,
+                () => _round,
+                (r) => { _round = r; round = r; },
+                (resolved) => {
+                    if (finished) return;
+                    const val = roundGetValue(resolved);
 
-                if (action === 'undo') {
-                    round = roundUndo(round);
-                    renderBoard(el, round);
-                    return;
-                }
-                if (cardIdx !== undefined) {
-                    round = roundSelectCard(round, parseInt(cardIdx, 10));
-                    renderBoard(el, round);
-                    return;
-                }
-                if (op) {
-                    const next = roundApplyOp(round, op);
-                    if (!next) return;
-                    round = next;
-                    renderBoard(el, round);
-
-                    if (roundRemaining(round).length === 1) {
-                        const val = roundGetValue(round);
-
-                        if (val !== null && Number.isInteger(val) && val >= 1 && val <= MM_MAX_QUOTE) {
-                            if (quoted.has(val)) {
-                                showFb(`Already quoted ${val}`, 'dupe');
-                            } else {
-                                quoted.add(val);
-                                score++;
-                                scoreEl.textContent = 'Quotes: ' + score;
-                                renderLedger();
-                                showFb('+1 · ' + val, 'new');
-                            }
+                    if (val !== null && Number.isInteger(val) && val >= 1 && val <= MM_MAX_QUOTE) {
+                        if (quoted.has(val)) {
+                            showFb('Already quoted ' + val, 'dupe');
                         } else {
-                            showFb(val !== null ? fmtVal(val) + " — doesn't count" : 'Invalid', 'bad');
+                            quoted.add(val);
+                            score++;
+                            scoreEl.textContent = 'Quotes: ' + score;
+                            renderLedger();
+                            showFb('+1 · ' + val, 'new');
                         }
-
-                        // Auto-reset for next quote
-                        const snap = [...digits];
-                        setTimeout(() => {
-                            if (finished) return;
-                            round = createRound(snap);
-                            renderBoard(el, round);
-                        }, QUOTE_RESET_MS);
+                    } else {
+                        showFb(val !== null ? val + " — doesn't count" : 'Invalid', 'bad');
                     }
-                    return;
-                }
-            });
 
-            // Start timer
-            started = Date.now();
+                    const snap = [...digits];
+                    setTimeout(() => {
+                        if (finished) return;
+                        _round = createRound(snap);
+                        round  = _round;
+                        renderBoard(el, _round);
+                    }, QUOTE_RESET_MS);
+                }
+            );
+
             renderBoard(el, round);
             renderLedger();
+            started = Date.now();
 
             function tick() {
                 if (finished) return;
-                const elapsed   = Date.now() - started;
-                const remaining = MM_DURATION_MS - elapsed;
-
+                const remaining = duration - (Date.now() - started);
                 if (remaining <= 0) {
                     finished = true;
                     timerEl.textContent = '0s';
@@ -603,7 +694,7 @@
                     return;
                 }
                 timerEl.textContent = fmtMs(remaining);
-                if (remaining < 10000) timerEl.classList.add('spk-timer-warn');
+                timerEl.classList.toggle('spk-timer-warn', remaining < 10000);
                 rafId = requestAnimationFrame(tick);
             }
             rafId = requestAnimationFrame(tick);
@@ -611,45 +702,40 @@
     }
 
     function _showMmEnd(screen, score, quoted) {
-        const pb   = getMmPB();
-        const isPB = pb !== null && score >= pb;
+        const pb     = getMmPB();
+        const isPB   = pb !== null && score >= pb;
         const sorted = [...quoted].sort((a, b) => a - b);
-
         screen.innerHTML = `
 <div class="spk-result">
   <div class="spk-result-icon">📈</div>
   <div class="spk-result-heading">Time's Up!</div>
   <div class="spk-result-stat">${score} quote${score !== 1 ? 's' : ''}</div>
-  ${isPB
-    ? '<div class="spk-result-new-pb">New best!</div>'
-    : (pb !== null ? `<div class="spk-result-prev-pb">Best: ${pb}</div>` : '')}
+  ${isPB  ? '<div class="spk-result-new-pb">New best!</div>'
+          : (pb !== null ? `<div class="spk-result-prev-pb">Best: ${pb}</div>` : '')}
   ${sorted.length > 0
     ? `<div class="spk-result-ledger">${sorted.map(n => `<span class="spk-chip">${n}</span>`).join('')}</div>`
     : ''}
   <div class="spk-result-actions">
-    <button class="spk-btn spk-btn-share"   id="spkMmShareBtn">Share</button>
-    <button class="spk-btn spk-btn-primary" id="spkMmRetryBtn">Play Again</button>
-    <button class="spk-btn spk-btn-ghost"   id="spkMmBackBtn">Back</button>
+    <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
+    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Play Again</button>
+    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Back</button>
   </div>
 </div>`;
-        screen.querySelector('#spkMmShareBtn').addEventListener('click', () =>
-            shareText(`I quoted ${score} number${score !== 1 ? 's' : ''} in Market Maker (1–${MM_MAX_QUOTE}) in 60s. Can you beat me?`));
-        screen.querySelector('#spkMmRetryBtn').addEventListener('click', () =>
+        screen.querySelector('#spkShareBtn').addEventListener('click', () =>
+            shareText(`I quoted ${score} number${score !== 1 ? 's' : ''} in Market Maker (1–${MM_MAX_QUOTE}). Can you beat me?`));
+        screen.querySelector('#spkRetryBtn').addEventListener('click', () =>
             startMarketMode(getTodayDigits()));
-        screen.querySelector('#spkMmBackBtn').addEventListener('click', showSpeakeasyMenu);
+        screen.querySelector('#spkBackBtn').addEventListener('click', showSpeakeasyMenu);
     }
 
     // ============================================================
-    // SECRET DOOR  (🔑 key icon injected into victory card)
+    // SECRET DOOR  (🔑 key icon, injected into the victory card)
     // ============================================================
     function injectKeyIcon() {
         const card = document.getElementById('victoryCard');
         if (!card) return;
-
-        // Remove stale icon if present
         const old = document.getElementById('spkKeyBtn');
         if (old) old.remove();
-
         if (!isRegistered()) return;
 
         const btn = document.createElement('button');
@@ -666,26 +752,24 @@
     }
 
     // ============================================================
-    // OBSERVER  (watches #victoryBackdrop for .show class — no app.js changes)
+    // OBSERVER  (watches #victoryBackdrop — zero changes to app.js)
     // ============================================================
     function observeVictoryCard() {
         const backdrop = document.getElementById('victoryBackdrop');
         if (!backdrop) return;
-
         let wasVisible = false;
         const obs = new MutationObserver(() => {
-            const isVisible = backdrop.classList.contains('show');
-            if (isVisible && !wasVisible) {
+            const visible = backdrop.classList.contains('show');
+            if (visible && !wasVisible) {
                 wasVisible = true;
                 if (isRegistered()) injectKeyIcon();
             }
-            if (!isVisible && wasVisible) {
+            if (!visible && wasVisible) {
                 wasVisible = false;
                 const k = document.getElementById('spkKeyBtn');
                 if (k) k.remove();
             }
         });
-
         obs.observe(backdrop, { attributes: true, attributeFilter: ['class'] });
     }
 
@@ -693,9 +777,7 @@
     // INIT
     // ============================================================
     async function init() {
-        // Non-blocking auth refresh — updates flag for future opens
         refreshAuthState().catch(() => {});
-
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', observeVictoryCard);
         } else {
@@ -704,5 +786,4 @@
     }
 
     init();
-
 })();
