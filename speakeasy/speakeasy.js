@@ -51,10 +51,22 @@
     const INTRO_KEY    = 'make24_afterhours_introSeen';
     const SLOT_CLASSES = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
 
+    // ── ACCESS MODEL ─────────────────────────────────────────────────
+    const TRIAL_DAYS_MAX            = 3;   // free preview days before paywall
+    const SUPPORT_PRICE_USD         = 10;
+    // ↓ Replace before shipping to production:
+    const LEMONSQUEEZY_CHECKOUT_URL = 'REPLACE_ME'; // live checkout URL from LS dashboard
+    const LEMONSQUEEZY_PRODUCT_ID   = 0;            // REPLACE_ME: numeric product_id from LS meta
+
+    const TRIAL_DAYS_KEY  = 'make24_afterhours_trial_days';  // JSON string[] of YYYY-MM-DD
+    const UNLOCKED_KEY    = 'make24_afterhours_unlocked';    // "1" when permanently unlocked
+    const LICENSE_KEY_KEY = 'make24_afterhours_license_key'; // stored license key (full string)
+
     // ============================================================
-    // GATE
+    // GATE + ACCESS MODEL
     // ============================================================
     let _registeredFromAuth = false;
+    const _devMode = new URLSearchParams(window.location.search).get('dev') === '1';
 
     function checkUrlParam() {
         try { return new URLSearchParams(window.location.search).get('speakeasy') === '1'; }
@@ -70,11 +82,47 @@
         } catch (_) { /* auth unavailable */ }
     }
 
-    function isRegistered() {
+    // isUnlocked: true if permanently unlocked (Lemon Squeezy license OR legacy dev backdoors).
+    // This is used for access decisions; the key icon visibility uses isTodaySolved() only.
+    function isUnlocked() {
+        // Dev backdoors: URL param or legacy make24_registered key (backward compat)
         if (checkUrlParam()) return true;
         if (localStorage.getItem('make24_registered') === '1') return true;
         if (_registeredFromAuth) return true;
-        return false;
+        // Production: Lemon Squeezy unlock
+        return localStorage.getItem(UNLOCKED_KEY) === '1';
+    }
+
+    // ── TRIAL HELPERS ────────────────────────────────────────────────
+    // Returns the local calendar date as YYYY-MM-DD (used as a day key).
+    function getLocalDayKey() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Returns Set<string> of distinct day keys used for trials.
+    function getTrialDays() {
+        try { return new Set(JSON.parse(localStorage.getItem(TRIAL_DAYS_KEY) || '[]')); }
+        catch (_) { return new Set(); }
+    }
+
+    // Record today as a used trial day (idempotent — Set deduplicates).
+    function addTrialDay(dayKey) {
+        const days = getTrialDays();
+        days.add(dayKey);
+        localStorage.setItem(TRIAL_DAYS_KEY, JSON.stringify([...days]));
+    }
+
+    function trialUsedCount() { return getTrialDays().size; }
+
+    // True if user can enter After Hours right now.
+    function canEnterAfterHoursToday() {
+        return isUnlocked() || trialUsedCount() < TRIAL_DAYS_MAX;
+    }
+
+    // Returns status object consumed by settings UI and paywall copy.
+    function afterHoursStatus() {
+        return { unlocked: isUnlocked(), used: trialUsedCount(), max: TRIAL_DAYS_MAX };
     }
 
     // Returns true when today's daily puzzle is already solved (reads app.js's localStorage key).
@@ -90,11 +138,11 @@
         if (val) {
             localStorage.setItem('make24_registered', '1');
             _registeredFromAuth = true;
-            console.log('[Speakeasy] Registered ON. Open/close the victory card to see 🔑.');
+            console.log('[Speakeasy] Unlock ON (legacy dev backdoor). Solve today\'s puzzle to see 🔑.');
         } else {
             localStorage.removeItem('make24_registered');
             _registeredFromAuth = false;
-            console.log('[Speakeasy] Registered OFF.');
+            console.log('[Speakeasy] Unlock OFF.');
         }
     };
 
@@ -827,6 +875,14 @@
     // LAUNCH  (direct entry — no selection screen)
     // ============================================================
     function launchAfterHours() {
+        // Access gate — show paywall if trial exhausted and not unlocked.
+        if (!canEnterAfterHoursToday()) {
+            showPaywallModal();
+            return;
+        }
+        // Record today as a trial day on actual entry (not on key icon visibility).
+        if (!isUnlocked()) addTrialDay(getLocalDayKey());
+
         const digits            = getTodayDigits();
         const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
         const orderBook         = [...solutionsByTarget.keys()].sort((a, b) => a - b);
@@ -861,13 +917,239 @@
     }
 
     // ============================================================
-    // KEY INJECTION  (two placements, both gated: registered + today solved)
+    // LICENSE KEY VALIDATION  (Lemon Squeezy)
+    // Step A: try direct browser fetch (works if LS allows CORS from this origin).
+    // Step B: if TypeError (CORS blocked), fall back to same-origin proxy /api/ls/validate.
+    // ============================================================
+    async function validateLicenseKey(key) {
+        // Dev shortcut — no network call needed.
+        if (_devMode && key === 'TEST-KEY-1234') return true;
+
+        const body    = `license_key=${encodeURIComponent(key)}`;
+        const headers = { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' };
+
+        async function tryUrl(url) {
+            const res  = await fetch(url, { method: 'POST', headers, body });
+            const data = await res.json();
+            if (!data.valid) return false;
+            // Validate product if configured (0 = skip check).
+            if (LEMONSQUEEZY_PRODUCT_ID && data.meta?.product_id !== LEMONSQUEEZY_PRODUCT_ID) return false;
+            return true;
+        }
+
+        try {
+            // Step A: direct to Lemon Squeezy API.
+            return await tryUrl('https://api.lemonsqueezy.com/v1/licenses/validate');
+        } catch (err) {
+            if (err instanceof TypeError) {
+                // Likely CORS — Step B: same-origin proxy.
+                return await tryUrl('/api/ls/validate');
+            }
+            throw err; // timeout or other network error — rethrow so caller shows "Network error"
+        }
+    }
+
+    // ============================================================
+    // PAYWALL MODAL  (shown when trial is exhausted)
+    // ============================================================
+    function showPaywallModal() {
+        const status = afterHoursStatus();
+        showOverlay((el) => {
+            el.classList.add('spk-overlay-center');
+            el.innerHTML = `
+<div class="spk-intro-card">
+  <div class="spk-intro-icon">🔑</div>
+  <div class="spk-intro-title">After Hours</div>
+  <div class="spk-intro-body">You&rsquo;ve had a ${status.max}-day preview. Support Make24 to keep After Hours.</div>
+  <div class="spk-paywall-actions">
+    <button class="spk-btn spk-btn-primary spk-paywall-support">Support $${SUPPORT_PRICE_USD}</button>
+    <button class="spk-btn spk-btn-ghost   spk-paywall-code">Enter code</button>
+    <button class="spk-btn spk-paywall-dismiss">Not now</button>
+  </div>
+</div>`;
+
+            el.querySelector('.spk-paywall-support').addEventListener('click', () => {
+                window.open(LEMONSQUEEZY_CHECKOUT_URL, '_blank', 'noopener');
+            });
+            el.querySelector('.spk-paywall-code').addEventListener('click', () => {
+                hideOverlay();
+                showLicenseEntryModal();
+            });
+            el.querySelector('.spk-paywall-dismiss').addEventListener('click', hideOverlay);
+            el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+        });
+    }
+
+    // ============================================================
+    // LICENSE ENTRY MODAL  (code input + validation)
+    // prefillKey: optional string to pre-fill (from URL ?license_key=)
+    // ============================================================
+    function showLicenseEntryModal(prefillKey) {
+        showOverlay((el) => {
+            el.classList.add('spk-overlay-center');
+            el.innerHTML = `
+<div class="spk-intro-card">
+  <div class="spk-intro-title">Enter your code</div>
+  <input class="spk-license-input" id="spkLicenseInput" type="text"
+         placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+  <div class="spk-license-status" id="spkLicenseStatus"></div>
+  <div class="spk-paywall-actions">
+    <button class="spk-btn spk-btn-primary spk-license-submit">Unlock</button>
+    <button class="spk-btn spk-btn-ghost   spk-license-back">Back</button>
+  </div>
+</div>`;
+
+            const input  = el.querySelector('#spkLicenseInput');
+            const status = el.querySelector('#spkLicenseStatus');
+            const submit = el.querySelector('.spk-license-submit');
+
+            if (prefillKey) input.value = prefillKey;
+            setTimeout(() => input.focus(), 80);
+
+            async function attemptUnlock() {
+                const key = input.value.trim();
+                if (!key) { input.focus(); return; }
+                submit.disabled    = true;
+                status.textContent = 'Checking\u2026';
+                status.className   = 'spk-license-status';
+                try {
+                    const valid = await validateLicenseKey(key);
+                    if (valid) {
+                        localStorage.setItem(UNLOCKED_KEY,    '1');
+                        localStorage.setItem(LICENSE_KEY_KEY, key);
+                        status.textContent = '\u2713 Unlocked!';
+                        status.classList.add('spk-status-ok');
+                        setTimeout(() => { hideOverlay(); launchAfterHours(); }, 900);
+                    } else {
+                        status.textContent = 'Invalid code \u2014 check and try again.';
+                        status.classList.add('spk-status-err');
+                        submit.disabled = false;
+                    }
+                } catch (_) {
+                    status.textContent = 'Network error \u2014 check your connection.';
+                    status.classList.add('spk-status-err');
+                    submit.disabled = false;
+                }
+            }
+
+            submit.addEventListener('click', attemptUnlock);
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptUnlock(); });
+            el.querySelector('.spk-license-back').addEventListener('click', () => {
+                hideOverlay();
+                showPaywallModal();
+            });
+            el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+        });
+    }
+
+    // ============================================================
+    // SETTINGS — AFTER HOURS SECTION
+    // Injected into #settingsAhSection whenever the settings modal opens.
+    // Visible only after first trial day used OR when unlocked.
+    // ============================================================
+    function renderSettingsAhSection() {
+        const container = document.getElementById('settingsAhSection');
+        if (!container) return;
+
+        const s = afterHoursStatus();
+        if (!s.unlocked && s.used === 0) { container.innerHTML = ''; return; }
+
+        const statusHTML = s.unlocked
+            ? 'After Hours: <strong>Unlocked \u2713</strong>'
+            : `After Hours: Preview (${s.used}/${s.max} days used)`;
+
+        container.innerHTML = `
+<div class="settings-section-title">After Hours</div>
+<div class="spk-settings-ah">
+  <p class="spk-settings-ah-status">${statusHTML}</p>
+  ${!s.unlocked ? `
+  <div class="spk-settings-ah-btns">
+    <button class="email-send-btn" id="spkSettingsSupportBtn">Support $${SUPPORT_PRICE_USD}</button>
+    <button class="otp-verify-btn" id="spkSettingsCodeBtn">Enter code</button>
+  </div>` : ''}
+</div>`;
+
+        if (!s.unlocked) {
+            container.querySelector('#spkSettingsSupportBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal')?.classList.remove('show');
+                window.open(LEMONSQUEEZY_CHECKOUT_URL, '_blank', 'noopener');
+            });
+            container.querySelector('#spkSettingsCodeBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal')?.classList.remove('show');
+                showLicenseEntryModal();
+            });
+        }
+    }
+
+    // ============================================================
+    // DEV HARNESS  (enabled by ?dev=1 — never shown in production)
+    // ============================================================
+    function showDevPanel() {
+        if (!_devMode) return;
+        if (document.getElementById('spkDevPanel')) return; // already mounted
+
+        const panel = document.createElement('div');
+        panel.id        = 'spkDevPanel';
+        panel.className = 'spk-dev-panel';
+        panel.innerHTML = `
+<div class="spk-dev-title">⚙ After Hours Dev</div>
+<button id="devSolve">Simulate daily solve</button>
+<button id="devTrialReset">Reset trial (0 days)</button>
+<button id="devTrial2">Set trial = 2 days</button>
+<button id="devTrialFull">Exhaust trial (3 days)</button>
+<button id="devToggleUnlock">Toggle unlock</button>
+<div class="spk-dev-meta">
+  Checkout: ${LEMONSQUEEZY_CHECKOUT_URL}<br>
+  Product ID: ${LEMONSQUEEZY_PRODUCT_ID}<br>
+  Test code: <b>TEST-KEY-1234</b>
+</div>`;
+        document.body.appendChild(panel);
+
+        panel.querySelector('#devSolve').addEventListener('click', () => {
+            try {
+                const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
+                const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : 1;
+                if (!saved.history) saved.history = {};
+                saved.history[today] = Object.assign(
+                    { moves: 3, solveTime: 30, undos: 0 },
+                    saved.history[today] || {},
+                    { completed: true }
+                );
+                localStorage.setItem('make24_v5', JSON.stringify(saved));
+            } catch (_) {}
+            location.reload();
+        });
+        panel.querySelector('#devTrialReset').addEventListener('click', () => {
+            localStorage.removeItem(TRIAL_DAYS_KEY);
+            location.reload();
+        });
+        panel.querySelector('#devTrial2').addEventListener('click', () => {
+            localStorage.setItem(TRIAL_DAYS_KEY, JSON.stringify(['2020-01-01', '2020-01-02']));
+            location.reload();
+        });
+        panel.querySelector('#devTrialFull').addEventListener('click', () => {
+            localStorage.setItem(TRIAL_DAYS_KEY,
+                JSON.stringify(['2020-01-01', '2020-01-02', '2020-01-03']));
+            location.reload();
+        });
+        panel.querySelector('#devToggleUnlock').addEventListener('click', () => {
+            if (localStorage.getItem(UNLOCKED_KEY) === '1') {
+                localStorage.removeItem(UNLOCKED_KEY);
+            } else {
+                localStorage.setItem(UNLOCKED_KEY, '1');
+            }
+            location.reload();
+        });
+    }
+
+    // ============================================================
+    // KEY INJECTION  (two placements, both gated: today solved)
     // ============================================================
 
     // Placement B: top-right of the victory card, near the badge.
-    // Condition: isRegistered() AND isTodaySolved().
+    // Condition: isTodaySolved() — any user who has solved today sees the key.
     function injectKeyIntoVictoryCard() {
-        if (!isRegistered() || !isTodaySolved()) return;
+        if (!isTodaySolved()) return;
         const card = document.getElementById('victoryCard');
         if (!card) return;
         const old = document.getElementById('spkKeyBtn');
@@ -884,10 +1166,10 @@
     }
 
     // Placement A: header top-bar, inserted after #streakDisplay.
-    // Condition: isRegistered() AND isTodaySolved().
+    // Condition: isTodaySolved() — any user who has solved today sees the key.
     // Idempotent — safe to call repeatedly; only inserts once.
     function injectTopbarKey() {
-        if (!isRegistered() || !isTodaySolved()) return;
+        if (!isTodaySolved()) return;
         if (document.getElementById('spkTopbarKeyBtn')) return;
         const streakEl = document.getElementById('streakDisplay');
         if (!streakEl) return;
@@ -932,11 +1214,33 @@
     // ============================================================
     async function init() {
         refreshAuthState().catch(() => {});
+
         const setup = () => {
             observeVictoryCard();
             // If today was already solved before page load, show the topbar key immediately.
             injectTopbarKey();
+
+            // Re-render the After Hours section each time the settings modal opens.
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal) {
+                new MutationObserver(() => {
+                    if (settingsModal.classList.contains('show')) renderSettingsAhSection();
+                }).observe(settingsModal, { attributes: true, attributeFilter: ['class'] });
+            }
+
+            // Auto-fill license key from URL: /unlock#key=XXXX or ?license_key=XXXX
+            const qp      = new URLSearchParams(window.location.search);
+            const hashKey = (window.location.hash.match(/[#&]key=([^&]+)/) || [])[1];
+            const urlKey  = qp.get('license_key') || (hashKey ? decodeURIComponent(hashKey) : null);
+            if (urlKey && !isUnlocked()) {
+                // Brief delay so the page paints first.
+                setTimeout(() => showLicenseEntryModal(urlKey), 600);
+            }
+
+            // Dev panel — only active when ?dev=1 is in the URL.
+            showDevPanel();
         };
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', setup);
         } else {

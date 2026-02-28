@@ -682,13 +682,14 @@ async function maybeShowSyncNudge() {
     localStorage.setItem(shownKey, '1');
 
     const nudge = document.getElementById('syncNudge');
+    if (!nudge) return; // auth UI removed from DOM
     setTimeout(() => nudge.classList.add('visible'), NUDGE_SHOW_DELAY_MS);
     setTimeout(() => nudge.classList.remove('visible'), NUDGE_HIDE_DELAY_MS);
 }
 
 function dismissSyncNudge() {
     const nudge = document.getElementById('syncNudge');
-    nudge.classList.remove('visible');
+    nudge?.classList.remove('visible');
     localStorage.setItem(NUDGE_DISMISSED_KEY, 'forever');
 }
 
@@ -2338,14 +2339,18 @@ function updateShakeToggleUI() {
 }
 
 function getIOSGuidanceHTML() {
+    // Wrapped in <details> so it is collapsed by default — no essay on first open.
     return `
-        <p>Safari asks for permission each visit. To allow permanently:</p>
-        <ol class="guidance-steps">
+        <details class="guidance-details">
+          <summary>How to enable</summary>
+          <p>Safari asks for permission each visit. To allow permanently:</p>
+          <ol class="guidance-steps">
             <li>Open <b>Settings</b> on your iPhone</li>
             <li>Scroll to <b>Safari</b> → <b>Advanced</b> → <b>Website Data</b></li>
-            <li>Find <b>make24.app</b> and enable <b>Motion & Orientation</b></li>
-        </ol>
-        <p>Or in Safari: tap <b>aA</b> in the address bar → <b>Website Settings</b> → enable <b>Motion & Orientation</b>.</p>
+            <li>Find <b>make24.app</b> and enable <b>Motion &amp; Orientation</b></li>
+          </ol>
+          <p>Or in Safari: tap <b>aA</b> in the address bar → <b>Website Settings</b> → enable <b>Motion &amp; Orientation</b>.</p>
+        </details>
     `;
 }
 
@@ -2396,15 +2401,13 @@ document.querySelectorAll('.op-btn').forEach(btn => {
 document.getElementById('undoBtn').addEventListener('click', animatedUndo);
 document.getElementById('hintBtn').addEventListener('click', useHint);
 
-// Sync nudge toast handlers
-document.getElementById('syncNudgeLink').addEventListener('click', nudgeOpenSignIn);
-document.getElementById('syncNudgeDismiss').addEventListener('click', dismissSyncNudge);
-
-// Auth: Google + OTP handlers
-document.getElementById('googleSignInBtn').addEventListener('click', signInWithGoogle);
-document.getElementById('otpSendBtn').addEventListener('click', sendOtpCode);
-document.getElementById('otpVerifyBtn').addEventListener('click', verifyOtpCode);
-document.getElementById('syncSignOutBtn').addEventListener('click', promptSignOut);
+// Auth event listeners — elements are present only when auth UI is enabled.
+document.getElementById('syncNudgeLink')?.addEventListener('click', nudgeOpenSignIn);
+document.getElementById('syncNudgeDismiss')?.addEventListener('click', dismissSyncNudge);
+document.getElementById('googleSignInBtn')?.addEventListener('click', signInWithGoogle);
+document.getElementById('otpSendBtn')?.addEventListener('click', sendOtpCode);
+document.getElementById('otpVerifyBtn')?.addEventListener('click', verifyOtpCode);
+document.getElementById('syncSignOutBtn')?.addEventListener('click', promptSignOut);
 document.getElementById('exportProgressBtn').addEventListener('click', exportProgressToFile);
 document.getElementById('importProgressBtn').addEventListener('click', () => {
     document.getElementById('importProgressFile').click();
@@ -2415,11 +2418,11 @@ document.getElementById('importProgressFile').addEventListener('change', async (
     e.target.value = '';
 });
 
-// Allow Enter key in OTP inputs
-document.getElementById('otpEmailInput').addEventListener('keydown', (e) => {
+// Enter-key shortcut for OTP inputs (only present when auth UI is enabled)
+document.getElementById('otpEmailInput')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendOtpCode();
 });
-document.getElementById('otpCodeInput').addEventListener('keydown', (e) => {
+document.getElementById('otpCodeInput')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') verifyOtpCode();
 });
 
