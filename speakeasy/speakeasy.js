@@ -429,51 +429,66 @@
     }
 
     // ============================================================
-    // BUBBLE LAYOUT  (order slots positioned in a ring around arena)
+    // BUBBLE LAYOUT  (order slots positioned in an elliptical ring)
+    //
+    // Why ellipse, not circle?
+    //   The diamond grid is 320 px wide on a ~390 px screen, leaving only
+    //   ~35 px of horizontal margin per side. A circle big enough to clear
+    //   the tiles would go off-screen left/right.
+    //   An ellipse lets us use the much larger vertical space of the arena
+    //   (typically 500–700 px) so most bubbles sit comfortably above/below
+    //   the tiles while the left/right bubbles hug the screen edges.
+    //
+    //   rx  = horizontal semi-axis  (limited by screen width)
+    //   ry  = vertical   semi-axis  (uses arena height — much more room)
     // ============================================================
     function positionBubbles(screenEl, arenaEl, orderBook) {
-        const container  = screenEl.querySelector('.spk-bubbles-container');
+        const container = screenEl.querySelector('.spk-bubbles-container');
         if (!container || !orderBook.length) return;
 
         const screenRect = screenEl.getBoundingClientRect();
         const arenaRect  = arenaEl.getBoundingClientRect();
 
-        // Arena center relative to screenEl.
-        // Shift cy upward ~30px to account for undo-row + feedback-row below the diamond.
+        // Diamond center relative to screenEl.
+        // Shift cy up 30 px: undo-row (36 px) + fb-row (24 px) sit below the diamond
+        // inside the arena flex-column, so the diamond's optical center is above
+        // the arena's geometric center.
         const cx = arenaRect.left + arenaRect.width  / 2 - screenRect.left;
         const cy = arenaRect.top  + arenaRect.height / 2 - screenRect.top - 30;
 
         const N        = orderBook.length;
-        const BUBBLE_D = 34;
-        const MARGIN   = BUBBLE_D + 8;
+        const BUBBLE_D = 30;          // diameter (px) — update .spk-bubble in CSS too
+        const BR       = BUBBLE_D / 2;
 
-        // Clamp radius so no bubble escapes the game screen
-        const maxR = Math.min(
-            cx                                           - MARGIN,
-            screenRect.width - cx                        - MARGIN,
-            cy                                           - MARGIN,
-            arenaRect.bottom - screenRect.top - cy       - MARGIN
-        );
+        // rx: reach toward the left/right screen edges
+        const rx = Math.max(140, Math.min(cx, screenRect.width - cx) - BR - 4);
 
-        const r1 = Math.min(182, Math.max(140, maxR));
-        const r2 = Math.min(138, Math.max(100, maxR - 44));
+        // ry: reach toward the top/bottom of the arena.
+        //     Top bound: stay inside the arena (don't cover the meta row above it).
+        //     Bottom bound: go all the way to the arena's bottom edge.
+        const arenaTopRel    = arenaRect.top    - screenRect.top;
+        const arenaBottomRel = arenaRect.bottom - screenRect.top;
+        const ryUp   = Math.max(140, cy - arenaTopRel    - BR - 10);
+        const ryDown = Math.max(140, arenaBottomRel - cy - BR - 10);
+        // Use the smaller of the two so the ellipse is symmetric top-to-bottom.
+        const ry = Math.min(ryUp, ryDown);
 
         let rings;
         if (N <= 22) {
-            rings = [{ items: orderBook, r: r1 }];
+            rings = [{ items: orderBook, rx, ry }];
         } else {
             const half = Math.ceil(N / 2);
             rings = [
-                { items: orderBook.slice(0, half), r: r1 },
-                { items: orderBook.slice(half),    r: r2 },
+                { items: orderBook.slice(0, half), rx,       ry       },
+                { items: orderBook.slice(half),    rx: rx * 0.70, ry: ry * 0.70 },
             ];
         }
 
-        rings.forEach(({ items, r }) => {
+        rings.forEach(({ items, rx, ry }) => {
             items.forEach((n, i) => {
-                const angle  = -Math.PI / 2 + i * (2 * Math.PI / items.length);
-                const x = cx + r * Math.cos(angle) - BUBBLE_D / 2;
-                const y = cy + r * Math.sin(angle) - BUBBLE_D / 2;
+                const angle = -Math.PI / 2 + i * (2 * Math.PI / items.length);
+                const x = cx + rx * Math.cos(angle) - BUBBLE_D / 2;
+                const y = cy + ry * Math.sin(angle) - BUBBLE_D / 2;
                 const bubble = container.querySelector(`[data-order="${n}"]`);
                 if (bubble) {
                     bubble.style.left = x.toFixed(1) + 'px';
@@ -824,6 +839,10 @@
         const digits            = getTodayDigits();
         const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
         const orderBook         = [...solutionsByTarget.keys()].sort((a, b) => a - b);
+
+        // Debug: open the browser console to verify reachable orders.
+        // For flexible digit sets like {2,3,5,8} every integer 1–24 is genuinely reachable.
+        console.log(`[AfterHours] digits: ${digits.join(',')} → ${orderBook.length} reachable order(s) in [${ORDER_MIN}..${ORDER_MAX}]:`, orderBook);
 
         if (orderBook.length === 0) {
             // Pathological edge case — guard gracefully
