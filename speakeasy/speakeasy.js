@@ -1,33 +1,38 @@
 /**
- * speakeasy.js — "After Hours" unified order-book mode for Make24
+ * speakeasy.js — "After Hours" order-book mode for Make24
  *
  * Gated behind isRegistered(). Zero modifications to app.js or style.css.
  * A MutationObserver watches the victory card to inject the 🔑 entry point.
  *
- * Single mode: After Hours
- *   - Uses today's 4 digits
- *   - Pre-computes an "order book": all integers in [ORDER_MIN..ORDER_MAX]
- *     achievable from those digits with +−×÷ using all four exactly once
- *   - Player fills orders by building expressions on the diamond board
- *   - Rising water IS the timer (durationMs = totalOrders × SECONDS_PER_ORDER × 1000)
- *   - Win: fill all orders before water tops out
- *   - Lose: water reaches top before all orders are filled
+ * Tapping 🔑 launches After Hours directly (no intermediate selection screen).
+ * A one-time intro overlay is shown the first time (INTRO_KEY in localStorage).
  *
- * ─── TUNE THESE CONSTANTS ────────────────────────────────────────
+ * After Hours:
+ *   - Pre-computes all integers in [ORDER_MIN..ORDER_MAX] achievable from
+ *     today's 4 digits using exact rational arithmetic (+−×÷, all digits once).
+ *   - Stores one solution expression tree per reachable target.
+ *   - Player fills orders on the diamond board; orders appear as bubbles in a
+ *     ring around the arena — not a bottom lump.
+ *   - Rising water IS the timer (durationMs = |orderBook| × SECONDS_PER_ORDER × 1000).
+ *   - End screen: missed orders are tappable → modal shows expression + Watch animation.
+ *
+ * ─── TUNE THESE CONSTANTS ────────────────────────────────────────────
  *   ORDER_MIN         = 1    smallest integer that counts as an order
  *   ORDER_MAX         = 24   largest  integer that counts as an order
- *   SECONDS_PER_ORDER = 30   seconds of play-time granted per order
- * ──────────────────────────────────────────────────────────────────
+ *   SECONDS_PER_ORDER = 30   seconds of play-time granted per reachable order
+ * ─────────────────────────────────────────────────────────────────────
  *
  * Storage keys (never collide with base-game keys):
- *   make24_afterhours_best   — JSON { count, total, pct } — best session
+ *   make24_afterhours_best      — JSON { count, total, pct }
+ *   make24_afterhours_introSeen — "1" once intro has been shown
  *
- * Registration gate:
- *   • URL param  ?speakeasy=1
- *   • localStorage make24_registered = "1"
- *   • Supabase session (wired into existing auth)
+ * Solution plans are represented as expression trees:
+ *   ExprNode = { type:'leaf', id:number, value:number }
+ *            | { type:'op', op:string, left:ExprNode, right:ExprNode, r:Rat }
+ *   Where Rat = { n:number, d:number } (reduced fraction, d > 0).
+ *   solutionsByTarget: Map<number, ExprNode>  (one tree per reachable integer)
  *
- * Console debug helper (local only):
+ * Console debug helper:
  *   window.make24DebugSetRegistered(true/false)
  */
 (function () {
@@ -38,11 +43,13 @@
     // ============================================================
     const ORDER_MIN         = 1;
     const ORDER_MAX         = 24;
-    const SECONDS_PER_ORDER = 30;   // seconds per order in the book
+    const SECONDS_PER_ORDER = 30;   // seconds per reachable order
     const RESET_MS          = 600;  // delay before board resets after expression resolves
+    const STEP_MS           = 700;  // ms between highlight and apply in demo animation
 
-    const AH_BEST_KEY    = 'make24_afterhours_best';
-    const SLOT_CLASSES   = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
+    const AH_BEST_KEY  = 'make24_afterhours_best';
+    const INTRO_KEY    = 'make24_afterhours_introSeen';
+    const SLOT_CLASSES = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
 
     // ============================================================
     // GATE
@@ -51,7 +58,7 @@
 
     function checkUrlParam() {
         try { return new URLSearchParams(window.location.search).get('speakeasy') === '1'; }
-        catch (e) { return false; }
+        catch (_) { return false; }
     }
 
     async function refreshAuthState() {
@@ -100,8 +107,7 @@
 
     // ============================================================
     // RATIONAL ARITHMETIC
-    // Avoids floating-point drift when evaluating expressions.
-    // Represents numbers as { n: numerator, d: denominator } (d > 0, reduced).
+    // Represents numbers as { n, d } (reduced, d > 0).
     // ============================================================
     function gcd(a, b) {
         a = Math.abs(a); b = Math.abs(b);
@@ -116,56 +122,96 @@
         return { n: s * n / g, d: s * d / g };
     }
 
-    // All 6 pairwise operations (handles a-b, b-a, a/b, b/a)
-    function ratOps(a, b) {
-        return [
-            rat(a.n * b.d + b.n * a.d, a.d * b.d),                              // a + b
-            rat(a.n * b.d - b.n * a.d, a.d * b.d),                              // a - b
-            rat(b.n * a.d - a.n * b.d, b.d * a.d),                              // b - a
-            rat(a.n * b.n, a.d * b.d),                                           // a * b
-            b.n !== 0 ? rat(a.n * b.d, a.d * b.n) : null,                       // a / b
-            a.n !== 0 ? rat(b.n * a.d, b.d * a.n) : null,                       // b / a
-        ].filter(r => r !== null);
-    }
-
-    // Enumerate every value reachable from the given list of rationals.
-    // Picks every pair, applies all 6 ops, recurses on the remaining + result.
-    function allRatResults(rats) {
-        if (rats.length === 1) return [rats[0]];
+    // ============================================================
+    // SOLVER WITH EXPRESSION TREES
+    //
+    // Each element in the recursive array is { r:Rat, tree:ExprNode }.
+    // allResults() enumerates every achievable value from a list of nodes.
+    // ============================================================
+    function allResults(nodes) {
+        if (nodes.length === 1) return [nodes[0]];
         const out = [];
-        for (let i = 0; i < rats.length; i++) {
-            for (let j = i + 1; j < rats.length; j++) {
-                const rest = rats.filter((_, k) => k !== i && k !== j);
-                for (const c of ratOps(rats[i], rats[j])) {
-                    for (const r of allRatResults([c, ...rest])) {
-                        out.push(r);
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const a = nodes[i], b = nodes[j];
+                const ar = a.r, br = b.r;
+                const rest = nodes.filter((_, k) => k !== i && k !== j);
+
+                const push = (op, r, la, lb) => {
+                    if (r) {
+                        const combined = { r, tree: { type: 'op', op, left: la.tree, right: lb.tree, r } };
+                        for (const res of allResults([combined, ...rest])) out.push(res);
                     }
-                }
+                };
+
+                push('+', rat(ar.n * br.d + br.n * ar.d, ar.d * br.d), a, b);           // a + b
+                push('-', rat(ar.n * br.d - br.n * ar.d, ar.d * br.d), a, b);           // a - b
+                push('-', rat(br.n * ar.d - ar.n * br.d, br.d * ar.d), b, a);           // b - a  (left=b)
+                push('*', rat(ar.n * br.n, ar.d * br.d), a, b);                         // a * b
+                if (br.n !== 0) push('/', rat(ar.n * br.d, ar.d * br.n), a, b);         // a / b
+                if (ar.n !== 0) push('/', rat(br.n * ar.d, br.d * ar.n), b, a);         // b / a  (left=b)
             }
         }
         return out;
     }
 
-    // Cache by sorted digit key so we only solve once per session per unique hand.
-    const _orderCache = {};
-    function computeOrderBook(digits, min, max) {
+    // Returns Map<integer, ExprNode> for all reachable integers in [min..max].
+    // Memoised by sorted digit key so computation runs once per unique hand.
+    const _solutionCache = {};
+
+    function computeSolutions(digits, min, max) {
         const key = [...digits].sort((a, b) => a - b).join(',');
-        if (!_orderCache[key]) {
-            const rats = digits.map(d => rat(d, 1));
-            const achievable = new Set();
-            for (const r of allRatResults(rats)) {
-                if (r.d === 1) achievable.add(r.n);   // integer result
+        if (_solutionCache[key]) return _solutionCache[key];
+
+        const leaves = digits.map((d, i) => ({
+            r:    rat(d, 1),
+            tree: { type: 'leaf', id: i, value: d }
+        }));
+
+        const solutions = new Map();
+        for (const { r, tree } of allResults(leaves)) {
+            if (r && r.d === 1 && r.n >= min && r.n <= max && Number.isFinite(r.n) && !solutions.has(r.n)) {
+                solutions.set(r.n, tree);
             }
-            // All integers in [min..max] achievable from these digits
-            _orderCache[key] = [...achievable]
-                .filter(n => Number.isFinite(n))
-                .sort((a, b) => a - b);
         }
-        return _orderCache[key].filter(n => n >= min && n <= max);
+
+        _solutionCache[key] = solutions;
+        return solutions;
     }
 
     // ============================================================
-    // ROUND ENGINE  (pure functions — unchanged from previous version)
+    // EXPRESSION RENDERING
+    // ============================================================
+    const OP_STR = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+
+    function treeToExpr(node) {
+        if (node.type === 'leaf') return String(node.value);
+        const op = OP_STR[node.op] || node.op;
+        const l  = node.left.type  === 'op' ? `(${treeToExpr(node.left)})`  : treeToExpr(node.left);
+        const r  = node.right.type === 'op' ? `(${treeToExpr(node.right)})` : treeToExpr(node.right);
+        return `${l} ${op} ${r}`;
+    }
+
+    // Extract ordered animation steps from the tree.
+    // Leaf IDs 0–3 map to initial digit cards; result IDs start at 4.
+    // Returns Array<{ aId, bId, op, resultId }>
+    function treeToSteps(tree) {
+        let nextId = 4;
+        const steps = [];
+        function walk(node) {
+            if (node.type === 'leaf') return node.id;
+            const aId     = walk(node.left);
+            const bId     = walk(node.right);
+            const resultId = nextId++;
+            steps.push({ aId, bId, op: node.op, resultId });
+            return resultId;
+        }
+        walk(tree);
+        return steps;
+    }
+
+    // ============================================================
+    // ROUND ENGINE  (pure functions)
     // ============================================================
     function calc(a, op, b) {
         switch (op) {
@@ -195,6 +241,11 @@
         return { ...round, selected: sel };
     }
 
+    // Force-select exactly two cards (used in demo animation).
+    function roundSelectTwo(round, aIdx, bIdx) {
+        return { ...round, selected: [aIdx, bIdx] };
+    }
+
     function roundApplyOp(round, op) {
         if (round.selected.length !== 2) return null;
         const [i, j] = round.selected;
@@ -215,7 +266,7 @@
     }
 
     function roundRemaining(round) { return round.cards.filter(c => !c.used); }
-    function roundGetValue(round) {
+    function roundGetValue(round)  {
         const r = roundRemaining(round);
         return r.length === 1 ? r[0].value : null;
     }
@@ -240,25 +291,13 @@
     // ============================================================
     // FORMAT HELPERS
     // ============================================================
-    // Compact timer display: "6:30", "0:45", "9s"
     function fmtTimer(ms) {
-        const s = Math.max(0, Math.ceil(ms / 1000));
-        const m = Math.floor(s / 60);
+        const s   = Math.max(0, Math.ceil(ms / 1000));
+        const m   = Math.floor(s / 60);
         const sec = s % 60;
-        if (m === 0) return sec + 's';
-        return `${m}:${sec.toString().padStart(2, '0')}`;
+        return m === 0 ? sec + 's' : `${m}:${sec.toString().padStart(2, '0')}`;
     }
 
-    // Readable duration for the menu: "6m", "7m 30s"
-    function fmtDuration(ms) {
-        const s = Math.round(ms / 1000);
-        const m = Math.floor(s / 60);
-        const sec = s % 60;
-        if (m === 0) return s + 's';
-        return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
-    }
-
-    // Render a number as a DOM node, reusing app.js fraction renderer when available
     function makeNumberNode(n) {
         if (window.formatNumberHTML) return window.formatNumberHTML(n);
         return document.createTextNode(Number.isInteger(n) ? String(n) : n.toFixed(2));
@@ -290,7 +329,7 @@
     function ensureOverlay() {
         if (_overlay) return _overlay;
         _overlay = document.createElement('div');
-        _overlay.id = 'spkOverlay';
+        _overlay.id        = 'spkOverlay';
         _overlay.className = 'spk-overlay';
         document.body.appendChild(_overlay);
         return _overlay;
@@ -299,7 +338,7 @@
     function showOverlay(buildFn) {
         const el = ensureOverlay();
         el.innerHTML = '';
-        el.classList.add('spk-visible');
+        el.className = 'spk-overlay spk-visible';
         buildFn(el);
     }
 
@@ -311,16 +350,16 @@
 
     // ============================================================
     // DIAMOND BOARD RENDERER
-    // Reuses base-game CSS classes (.card, .selected, .first, .second)
-    // for pixel-identical cards.
+    // Works for both the main arena and the mini demo board.
+    // Reuses base-game .card / .selected / .first / .second classes.
     // ============================================================
     function renderBoard(el, round) {
         SLOT_CLASSES.forEach((cls, slotIdx) => {
             const slotEl = el.querySelector('.' + cls);
             if (!slotEl) return;
 
-            const card    = [...round.cards].reverse().find(c => c.slot === slotIdx && !c.used);
-            const cardIdx = card ? round.cards.indexOf(card) : -1;
+            const card        = [...round.cards].reverse().find(c => c.slot === slotIdx && !c.used);
+            const cardIdx     = card ? round.cards.indexOf(card) : -1;
             const existing    = slotEl.querySelector('.card');
             const existingIdx = existing ? parseInt(existing.dataset.cardIdx, 10) : -1;
 
@@ -328,14 +367,14 @@
 
             const isFirst  = round.selected[0] === cardIdx;
             const isSecond = round.selected[1] === cardIdx;
-            const cls2 = 'card' + (isFirst ? ' selected first' : '') + (isSecond ? ' selected second' : '');
+            const cls2     = 'card' + (isFirst ? ' selected first' : '') + (isSecond ? ' selected second' : '');
 
             if (existingIdx === cardIdx) {
                 existing.className = cls2;
             } else {
                 slotEl.innerHTML = '';
                 const cardEl = document.createElement('div');
-                cardEl.className = cls2;
+                cardEl.className      = cls2;
                 cardEl.dataset.cardIdx = cardIdx;
                 cardEl.appendChild(makeNumberNode(card.value));
                 slotEl.appendChild(cardEl);
@@ -350,17 +389,17 @@
     }
 
     // ============================================================
-    // SHARED ARENA INTERACTION WIRING
+    // ARENA WIRING  (event delegation on the main game arena)
     // ============================================================
     function wireArena(el, getRound, setRound, onResolve) {
         const arena = el.querySelector('.spk-arena');
         if (!arena) return;
 
         arena.addEventListener('click', (e) => {
-            const cardEl  = e.target.closest('[data-card-idx]');
-            const opBtn   = e.target.closest('[data-op]');
-            const undoEl  = e.target.closest('[data-action="undo"]');
-            const opOvl   = e.target.closest('.spk-op-overlay');
+            const cardEl = e.target.closest('[data-card-idx]');
+            const opBtn  = e.target.closest('[data-op]');
+            const undoEl = e.target.closest('[data-action="undo"]');
+            const opOvl  = e.target.closest('.spk-op-overlay');
 
             if (undoEl) {
                 setRound(roundUndo(getRound()));
@@ -390,56 +429,246 @@
     }
 
     // ============================================================
-    // SPEAKEASY MENU  (single mode)
+    // BUBBLE LAYOUT  (order slots positioned in a ring around arena)
     // ============================================================
-    function showSpeakeasyMenu() {
-        const digits    = getTodayDigits();
-        const orderBook = computeOrderBook(digits, ORDER_MIN, ORDER_MAX);
-        const total     = orderBook.length;
-        const durationMs = total * SECONDS_PER_ORDER * 1000;
-        const pb = getAhBest();
+    function positionBubbles(screenEl, arenaEl, orderBook) {
+        const container  = screenEl.querySelector('.spk-bubbles-container');
+        if (!container || !orderBook.length) return;
 
-        showOverlay((el) => {
-            el.innerHTML = `
-<div class="spk-sheet" role="dialog" aria-modal="true" aria-label="After Hours">
-  <button class="spk-close-btn" aria-label="Close">&times;</button>
-  <div class="spk-menu-header">
-    <div class="spk-menu-title">After Hours</div>
-    <div class="spk-menu-subtitle">How many orders can you fill?</div>
-    <div class="spk-menu-digits">${digits.join(' · ')}</div>
-  </div>
-  <div class="spk-mode-list">
-    <button class="spk-mode-card" id="spkStartBtn">
-      <div class="spk-mode-icon">🌊</div>
-      <div class="spk-mode-info">
-        <div class="spk-mode-name">After Hours</div>
-        <div class="spk-mode-desc">${total} orders &middot; ${fmtDuration(durationMs)}</div>
-        <div class="spk-mode-pb">${pb
-            ? `Best: ${pb.count}/${pb.total} (${pb.pct}%)`
-            : 'No record yet'}</div>
-      </div>
-    </button>
-  </div>
-</div>`;
-            el.querySelector('.spk-close-btn').addEventListener('click', hideOverlay);
-            el.querySelector('#spkStartBtn').addEventListener('click', () =>
-                startAfterHoursMode(digits, orderBook));
-            el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+        const screenRect = screenEl.getBoundingClientRect();
+        const arenaRect  = arenaEl.getBoundingClientRect();
+
+        // Arena center relative to screenEl.
+        // Shift cy upward ~30px to account for undo-row + feedback-row below the diamond.
+        const cx = arenaRect.left + arenaRect.width  / 2 - screenRect.left;
+        const cy = arenaRect.top  + arenaRect.height / 2 - screenRect.top - 30;
+
+        const N        = orderBook.length;
+        const BUBBLE_D = 34;
+        const MARGIN   = BUBBLE_D + 8;
+
+        // Clamp radius so no bubble escapes the game screen
+        const maxR = Math.min(
+            cx                                           - MARGIN,
+            screenRect.width - cx                        - MARGIN,
+            cy                                           - MARGIN,
+            arenaRect.bottom - screenRect.top - cy       - MARGIN
+        );
+
+        const r1 = Math.min(182, Math.max(140, maxR));
+        const r2 = Math.min(138, Math.max(100, maxR - 44));
+
+        let rings;
+        if (N <= 22) {
+            rings = [{ items: orderBook, r: r1 }];
+        } else {
+            const half = Math.ceil(N / 2);
+            rings = [
+                { items: orderBook.slice(0, half), r: r1 },
+                { items: orderBook.slice(half),    r: r2 },
+            ];
+        }
+
+        rings.forEach(({ items, r }) => {
+            items.forEach((n, i) => {
+                const angle  = -Math.PI / 2 + i * (2 * Math.PI / items.length);
+                const x = cx + r * Math.cos(angle) - BUBBLE_D / 2;
+                const y = cy + r * Math.sin(angle) - BUBBLE_D / 2;
+                const bubble = container.querySelector(`[data-order="${n}"]`);
+                if (bubble) {
+                    bubble.style.left = x.toFixed(1) + 'px';
+                    bubble.style.top  = y.toFixed(1) + 'px';
+                }
+            });
         });
     }
 
     // ============================================================
-    // AFTER HOURS MODE
+    // INTRO SCREEN  (shown once on first After Hours launch)
     // ============================================================
-    function startAfterHoursMode(digits, orderBook) {
+    function showIntro(totalOrders, onStart) {
+        showOverlay((el) => {
+            el.classList.add('spk-overlay-center');
+            el.innerHTML = `
+<div class="spk-intro-card">
+  <div class="spk-intro-icon">🌊</div>
+  <div class="spk-intro-title">After Hours</div>
+  <div class="spk-intro-body">Fill every order before the tide rises.</div>
+  <div class="spk-intro-tag">Integers 1&ndash;${ORDER_MAX} &middot; ${totalOrders} orders today</div>
+  <button class="spk-btn spk-btn-primary spk-intro-start">Let's go</button>
+</div>`;
+            el.querySelector('.spk-intro-start').addEventListener('click', () => {
+                localStorage.setItem(INTRO_KEY, '1');
+                onStart();
+            });
+        });
+    }
+
+    // ============================================================
+    // DEMO ANIMATION  (plays solution steps on the mini board)
+    // ============================================================
+    function playDemoAnimation(miniEl, digits, steps, timeouts, onDone) {
+        let demoRound      = createRound([...digits]);
+        const idToCardIdx  = { 0: 0, 1: 1, 2: 2, 3: 3 };
+        let stepIdx        = 0;
+        renderBoard(miniEl, demoRound);
+
+        function runStep() {
+            if (stepIdx >= steps.length) { onDone(); return; }
+            const step = steps[stepIdx++];
+            const aIdx = idToCardIdx[step.aId];
+            const bIdx = idToCardIdx[step.bId];
+
+            // Phase 1: highlight the two operand cards
+            demoRound = roundSelectTwo(demoRound, aIdx, bIdx);
+            renderBoard(miniEl, demoRound);
+
+            const t1 = setTimeout(() => {
+                // Phase 2: apply the operator
+                const next = roundApplyOp(demoRound, step.op);
+                if (!next) { onDone(); return; }
+                demoRound = next;
+                idToCardIdx[step.resultId] = demoRound.cards.length - 1;
+                renderBoard(miniEl, demoRound);
+
+                const t2 = setTimeout(runStep, 500);
+                timeouts.push(t2);
+            }, STEP_MS);
+            timeouts.push(t1);
+        }
+
+        const t0 = setTimeout(runStep, 300);
+        timeouts.push(t0);
+    }
+
+    // ============================================================
+    // SOLUTION MODAL  (tapped from end screen on a missed order)
+    // ============================================================
+    function showSolutionModal(gameScreen, n, tree, digits) {
+        const expr  = treeToExpr(tree);
+        const steps = treeToSteps(tree);
+
+        const modal = document.createElement('div');
+        modal.className = 'spk-solution-modal';
+        modal.innerHTML = `
+<div class="spk-sol-card">
+  <div class="spk-sol-heading">How to make <span class="spk-sol-n">${n}</span></div>
+  <div class="spk-sol-expr">${expr}</div>
+  <div class="spk-mini-board">
+    <div class="spk-mini-diamond-grid">
+      <div class="spk-slot spk-slot-top"></div>
+      <div class="spk-slot spk-slot-left"></div>
+      <div class="spk-slot spk-slot-right"></div>
+      <div class="spk-slot spk-slot-bottom"></div>
+    </div>
+  </div>
+  <div class="spk-sol-actions">
+    <button class="spk-btn spk-btn-primary spk-sol-watch">Watch</button>
+    <button class="spk-btn spk-btn-ghost   spk-sol-close">Close</button>
+  </div>
+</div>`;
+
+        gameScreen.appendChild(modal);
+
+        const miniEl   = modal.querySelector('.spk-mini-board');
+        const watchBtn = modal.querySelector('.spk-sol-watch');
+        const closeBtn = modal.querySelector('.spk-sol-close');
+
+        let demoTimeouts = [];
+        let demoRunning  = false;
+
+        // Render initial state
+        renderBoard(miniEl, createRound([...digits]));
+
+        function stopDemo() {
+            demoTimeouts.forEach(clearTimeout);
+            demoTimeouts    = [];
+            demoRunning     = false;
+            watchBtn.disabled    = false;
+            watchBtn.textContent = 'Watch';
+        }
+
+        watchBtn.addEventListener('click', () => {
+            if (demoRunning) return;
+            demoRunning          = true;
+            watchBtn.disabled    = true;
+            watchBtn.textContent = 'Playing…';
+            demoTimeouts         = [];
+            // Reset board to initial digits before playing
+            renderBoard(miniEl, createRound([...digits]));
+            playDemoAnimation(miniEl, digits, steps, demoTimeouts, () => {
+                demoRunning          = false;
+                watchBtn.disabled    = false;
+                watchBtn.textContent = 'Watch again';
+            });
+        });
+
+        closeBtn.addEventListener('click', () => { stopDemo(); modal.remove(); });
+
+        // Tap backdrop → close
+        modal.addEventListener('click', (e) => {
+            if (!e.target.closest('.spk-sol-card')) { stopDemo(); modal.remove(); }
+        });
+    }
+
+    // ============================================================
+    // END SCREEN
+    // ============================================================
+    function _showAhEnd(screen, foundSet, orderBook, solutionsByTarget, digits, isComplete) {
+        const total = orderBook.length;
+        const found = foundSet.size;
+        const pct   = Math.round(100 * found / total);
+        const pb    = getAhBest();
+        const isPB  = !pb || found > pb.count || (found === pb.count && pct > pb.pct);
+
+        const chipsHTML = orderBook.map(n => {
+            if (foundSet.has(n)) {
+                return `<span class="spk-chip spk-chip-found">${n}</span>`;
+            }
+            const hasSol = solutionsByTarget.has(n);
+            return `<span class="spk-chip spk-chip-missed${hasSol ? ' spk-chip-tappable' : ''}"
+                         data-missed="${n}"
+                         title="${hasSol ? 'Tap to see solution' : ''}">${n}</span>`;
+        }).join('');
+
+        screen.innerHTML = `
+<div class="spk-result">
+  <div class="spk-result-icon">${isComplete ? '✓' : '🌊'}</div>
+  <div class="spk-result-heading">${isComplete ? 'All orders filled!' : 'Time\u2019s up'}</div>
+  <div class="spk-result-stat">${found}/${total} &middot; ${pct}%</div>
+  ${isPB
+      ? '<div class="spk-result-new-pb">New best!</div>'
+      : (pb ? `<div class="spk-result-prev-pb">Best: ${pb.count}/${pb.total} (${pb.pct}%)</div>` : '')}
+  ${found < total ? '<div class="spk-result-hint">Tap a missed order to see a solution.</div>' : ''}
+  <div class="spk-result-book" id="spkResultBook">${chipsHTML}</div>
+  <div class="spk-result-actions">
+    <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
+    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Play Again</button>
+    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Close</button>
+  </div>
+</div>`;
+
+        // Tap missed chip → solution modal
+        screen.querySelector('#spkResultBook').addEventListener('click', (e) => {
+            const chip = e.target.closest('[data-missed]');
+            if (!chip) return;
+            const n    = parseInt(chip.dataset.missed, 10);
+            const tree = solutionsByTarget.get(n);
+            if (tree) showSolutionModal(screen, n, tree, digits);
+        });
+
+        screen.querySelector('#spkShareBtn').addEventListener('click', () =>
+            shareText(`I filled ${found}/${total} orders (${pct}%) in After Hours. Can you beat me?`));
+        screen.querySelector('#spkRetryBtn').addEventListener('click', launchAfterHours);
+        screen.querySelector('#spkBackBtn').addEventListener('click', hideOverlay);
+    }
+
+    // ============================================================
+    // AFTER HOURS GAME SCREEN
+    // ============================================================
+    function startAfterHoursMode(digits, orderBook, solutionsByTarget) {
         const totalOrders = orderBook.length;
         const durationMs  = totalOrders * SECONDS_PER_ORDER * 1000;
-
-        if (totalOrders === 0) {
-            // Degenerate hand — just show the menu again
-            showSpeakeasyMenu();
-            return;
-        }
 
         let foundSet = new Set();
         let round    = createRound([...digits]);
@@ -449,8 +678,14 @@
         let fbTimer  = null;
 
         showOverlay((el) => {
+            // Bubbles are created here (un-positioned), positioned after layout below.
+            const bubblesHTML = orderBook
+                .map(n => `<div class="spk-bubble" data-order="${n}"></div>`)
+                .join('');
+
             el.innerHTML = `
 <div class="spk-game-screen">
+  <div class="spk-bubbles-container" id="spkBubbles">${bubblesHTML}</div>
   <div class="spk-topbar">
     <button class="spk-back-btn" aria-label="Back">&#8592; Back</button>
     <span class="spk-game-label">After Hours</span>
@@ -458,9 +693,9 @@
   </div>
   <div class="spk-ah-meta">
     <span class="spk-filled" id="spkFilled">Filled: 0/${totalOrders}</span>
-    <span class="spk-ah-rule">Integers 1&#8211;${ORDER_MAX}</span>
+    <span class="spk-ah-rule">Integers 1&ndash;${ORDER_MAX}</span>
   </div>
-  <div class="spk-arena">
+  <div class="spk-arena" id="spkArena">
     <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
       <div class="spk-slot spk-slot-left"></div>
@@ -471,7 +706,6 @@
       <button class="spk-undo-btn" style="visibility:hidden" data-action="undo">&#8630; Undo</button>
     </div>
     <div class="spk-inline-fb" id="spkFb"></div>
-    <!-- Operator overlay: base-game .operators-grid + .op-btn classes -->
     <div class="spk-op-overlay">
       <div class="operators-grid">
         <button class="op-btn" data-op="+">+</button>
@@ -480,49 +714,38 @@
         <button class="op-btn" data-op="/">&divide;</button>
       </div>
     </div>
-    <!-- Water overlay (pointer-events:none, rises behind cards) -->
     <div class="spk-water" id="spkWater"></div>
   </div>
-  <!-- Order book: below arena, not covered by water -->
-  <div class="spk-order-book" id="spkOrderBook"></div>
 </div>`;
 
-            const screen   = el.querySelector('.spk-game-screen');
-            const timerEl  = el.querySelector('#spkTimer');
-            const waterEl  = el.querySelector('#spkWater');
-            const filledEl = el.querySelector('#spkFilled');
-            const bookEl   = el.querySelector('#spkOrderBook');
-            const fbEl     = el.querySelector('#spkFb');
-
-            // Build order book slots (sorted ascending, numbers hidden until found)
-            orderBook.forEach(n => {
-                const slot = document.createElement('div');
-                slot.className = 'spk-order-slot';
-                slot.dataset.order = n;
-                bookEl.appendChild(slot);
-            });
+            const gameScreen = el.querySelector('.spk-game-screen');
+            const arenaEl    = el.querySelector('#spkArena');
+            const timerEl    = el.querySelector('#spkTimer');
+            const waterEl    = el.querySelector('#spkWater');
+            const filledEl   = el.querySelector('#spkFilled');
+            const fbEl       = el.querySelector('#spkFb');
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
                 finished = true;
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
-                showSpeakeasyMenu();
+                hideOverlay();
             });
 
             function showFb(msg, cls) {
                 if (fbTimer) clearTimeout(fbTimer);
                 fbEl.textContent = msg;
                 fbEl.className   = 'spk-inline-fb spk-fb-' + cls + ' spk-fb-show';
-                fbTimer = setTimeout(() => { fbEl.classList.remove('spk-fb-show'); }, 900);
+                fbTimer = setTimeout(() => fbEl.classList.remove('spk-fb-show'), 900);
             }
 
             function markFilled(n) {
                 foundSet.add(n);
                 filledEl.textContent = `Filled: ${foundSet.size}/${totalOrders}`;
-                const slot = bookEl.querySelector(`[data-order="${n}"]`);
-                if (slot && !slot.classList.contains('spk-found')) {
-                    slot.textContent = n;
-                    slot.classList.add('spk-found');
+                const bubble = el.querySelector(`.spk-bubble[data-order="${n}"]`);
+                if (bubble && !bubble.classList.contains('spk-bubble-found')) {
+                    bubble.textContent = n;
+                    bubble.classList.add('spk-bubble-found');
                 }
             }
 
@@ -541,37 +764,35 @@
                         } else {
                             markFilled(val);
                             showFb('+1 · ' + val, 'new');
-
-                            // All orders found?
                             if (foundSet.size === totalOrders) {
                                 finished = true;
                                 cancelAnimationFrame(rafId);
                                 saveAhBest(foundSet.size, totalOrders);
-                                // Brief celebration pause before result screen
-                                setTimeout(() => _showAhEnd(screen, foundSet, orderBook, true), 700);
+                                setTimeout(() => _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, true), 700);
                                 return;
                             }
                         }
-                    } else if (val !== null && Number.isInteger(val)) {
-                        // Integer but outside range or not achievable — just reset silently
-                        // (no harsh feedback; players are exploring)
-                    } else if (val !== null) {
+                    } else if (val !== null && !Number.isInteger(val)) {
                         showFb('Not an integer', 'bad');
                     }
 
                     // Reset to original 4 digits for next attempt
-                    const snap = [...digits];
                     setTimeout(() => {
                         if (finished) return;
-                        _round = createRound(snap);
+                        _round = createRound([...digits]);
                         round  = _round;
                         renderBoard(el, _round);
                     }, RESET_MS);
                 }
             );
 
-            renderBoard(el, round);
-            started = Date.now();
+            // Position bubbles after layout is stable, then start the clock
+            requestAnimationFrame(() => {
+                positionBubbles(gameScreen, arenaEl, orderBook);
+                renderBoard(el, round);
+                started = Date.now();
+                rafId   = requestAnimationFrame(tick);
+            });
 
             function tick() {
                 if (finished) return;
@@ -584,7 +805,7 @@
                     timerEl.textContent  = '0:00';
                     timerEl.classList.add('spk-timer-warn');
                     saveAhBest(foundSet.size, totalOrders);
-                    _showAhEnd(screen, foundSet, orderBook, false);
+                    _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, false);
                     return;
                 }
 
@@ -593,51 +814,40 @@
                 timerEl.classList.toggle('spk-timer-warn', remaining < 15000);
                 rafId = requestAnimationFrame(tick);
             }
-            rafId = requestAnimationFrame(tick);
         });
     }
 
     // ============================================================
-    // END SCREEN
+    // LAUNCH  (direct entry — no selection screen)
     // ============================================================
-    function _showAhEnd(screen, foundSet, orderBook, isComplete) {
-        const total = orderBook.length;
-        const found = foundSet.size;
-        const pct   = Math.round(100 * found / total);
-        const pb    = getAhBest();
-        const isPB  = !pb || found > pb.count || (found === pb.count && pct > pb.pct);
+    function launchAfterHours() {
+        const digits            = getTodayDigits();
+        const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
+        const orderBook         = [...solutionsByTarget.keys()].sort((a, b) => a - b);
 
-        // Full order book: found chips bright, missed chips dim
-        const chipsHTML = orderBook.map(n =>
-            foundSet.has(n)
-                ? `<span class="spk-chip spk-chip-found">${n}</span>`
-                : `<span class="spk-chip spk-chip-missed">${n}</span>`
-        ).join('');
-
-        screen.innerHTML = `
-<div class="spk-result">
-  <div class="spk-result-icon">${isComplete ? '✓' : '🌊'}</div>
-  <div class="spk-result-heading">${isComplete ? 'All orders filled!' : "Time\u2019s up"}</div>
-  <div class="spk-result-stat">${found}/${total} &middot; ${pct}%</div>
-  ${isPB
-    ? '<div class="spk-result-new-pb">New best!</div>'
-    : (pb ? `<div class="spk-result-prev-pb">Best: ${pb.count}/${pb.total} (${pb.pct}%)</div>` : '')}
-  <div class="spk-result-book">${chipsHTML}</div>
-  <div class="spk-result-actions">
-    <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
-    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Play Again</button>
-    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Back</button>
-  </div>
+        if (orderBook.length === 0) {
+            // Pathological edge case — guard gracefully
+            showOverlay((el) => {
+                el.classList.add('spk-overlay-center');
+                el.innerHTML = `
+<div class="spk-intro-card">
+  <div class="spk-intro-title">Thin market today</div>
+  <div class="spk-intro-body">No achievable orders for today&rsquo;s digits.</div>
+  <button class="spk-btn spk-btn-ghost spk-intro-close">Close</button>
 </div>`;
+                el.querySelector('.spk-intro-close').addEventListener('click', hideOverlay);
+                el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+            });
+            return;
+        }
 
-        screen.querySelector('#spkShareBtn').addEventListener('click', () =>
-            shareText(`I filled ${found}/${total} orders (${pct}%) in After Hours. Can you beat me?`));
-        screen.querySelector('#spkRetryBtn').addEventListener('click', () => {
-            const digits    = getTodayDigits();
-            const orderBook = computeOrderBook(digits, ORDER_MIN, ORDER_MAX);
-            startAfterHoursMode(digits, orderBook);
-        });
-        screen.querySelector('#spkBackBtn').addEventListener('click', showSpeakeasyMenu);
+        const introSeen = localStorage.getItem(INTRO_KEY) === '1';
+        if (!introSeen) {
+            showIntro(orderBook.length, () =>
+                startAfterHoursMode(digits, orderBook, solutionsByTarget));
+        } else {
+            startAfterHoursMode(digits, orderBook, solutionsByTarget);
+        }
     }
 
     // ============================================================
@@ -658,7 +868,7 @@
         btn.textContent = '🔑';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showSpeakeasyMenu();
+            launchAfterHours();
         });
         card.appendChild(btn);
     }
