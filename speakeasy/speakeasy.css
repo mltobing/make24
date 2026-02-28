@@ -1,13 +1,13 @@
 /* =============================================================
-   SPEAKEASY — After-Hours hard modes for Make24
-   All structural selectors are prefixed .spk- to avoid collisions.
-   Cards, operators, and result displays intentionally reuse the
-   base-game classes (.card, .selected, .op-btn, .operators-grid)
-   so they look pixel-identical to the daily puzzle.
+   SPEAKEASY — "After Hours" order-book mode for Make24
+   All structural selectors prefixed .spk- to avoid collisions.
+   Cards (.card, .selected, .first, .second) and operator buttons
+   (.op-btn, .operators-grid) intentionally reuse base-game classes
+   from style.css so they look pixel-identical to the daily puzzle.
    ============================================================= */
 
 /* ---------------------------------------------------------------
-   OVERLAY  (full-screen layer, z-index above the victory card at 100)
+   OVERLAY  (z-index 600: above victory card at 100, below confetti at 1000)
    --------------------------------------------------------------- */
 .spk-overlay {
     display: none;
@@ -50,19 +50,16 @@
     to   { transform: translateY(0);    opacity: 1; }
 }
 
-/* When game screen is active, let it fill the whole overlay */
+/* Game screen fills the whole overlay */
 .spk-overlay.spk-visible .spk-game-screen {
     border-radius: 0;
     max-height: 100dvh;
 }
 
-/* ---------------------------------------------------------------
-   CLOSE BUTTON  (×, top-right of sheet)
-   --------------------------------------------------------------- */
+/* Close button */
 .spk-close-btn {
     position: absolute;
-    top: 14px;
-    right: 14px;
+    top: 14px; right: 14px;
     background: none;
     border: none;
     color: #64748b;
@@ -80,7 +77,7 @@
    --------------------------------------------------------------- */
 .spk-menu-header {
     text-align: center;
-    margin-bottom: 14px;
+    margin-bottom: 20px;
 }
 .spk-menu-title {
     font-size: 1.25rem;
@@ -101,48 +98,10 @@
 }
 
 /* ---------------------------------------------------------------
-   TIMER TOGGLE  (Rush / Chill pill)
+   MODE CARD  (single entry in the menu)
    --------------------------------------------------------------- */
-.spk-timer-toggle {
-    display: flex;
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 10px;
-    padding: 3px;
-    gap: 3px;
-    width: fit-content;
-    margin: 0 auto 6px;
-}
-.spk-tt-btn {
-    background: none;
-    border: none;
-    color: #64748b;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    padding: 5px 16px;
-    border-radius: 7px;
-    cursor: pointer;
-    transition: color 0.15s, background 0.15s;
-}
-.spk-tt-btn.spk-tt-active {
-    background: #1e293b;
-    color: #f1f5f9;
-}
-.spk-timer-desc {
-    text-align: center;
-    font-size: 0.75rem;
-    color: #64748b;
-    margin-bottom: 14px;
-}
+.spk-mode-list { display: flex; flex-direction: column; }
 
-/* ---------------------------------------------------------------
-   MODE CARDS
-   --------------------------------------------------------------- */
-.spk-mode-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
 .spk-mode-card {
     display: flex;
     align-items: flex-start;
@@ -163,30 +122,11 @@
     background: #172032;
     outline: none;
 }
-.spk-mode-icon {
-    font-size: 1.75rem;
-    line-height: 1;
-    flex-shrink: 0;
-    margin-top: 2px;
-}
+.spk-mode-icon { font-size: 1.75rem; line-height: 1; flex-shrink: 0; margin-top: 2px; }
 .spk-mode-info { flex: 1; min-width: 0; }
-.spk-mode-name {
-    font-size: 0.9375rem;
-    font-weight: 700;
-    color: #f1f5f9;
-    margin-bottom: 3px;
-}
-.spk-mode-desc {
-    font-size: 0.8125rem;
-    color: #94a3b8;
-    margin-bottom: 5px;
-    line-height: 1.4;
-}
-.spk-mode-pb {
-    font-size: 0.75rem;
-    color: #22d3ee;
-    font-weight: 500;
-}
+.spk-mode-name { font-size: 0.9375rem; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.spk-mode-desc { font-size: 0.8125rem; color: #94a3b8; margin-bottom: 5px; line-height: 1.4; }
+.spk-mode-pb   { font-size: 0.75rem; color: #22d3ee; font-weight: 500; }
 
 /* ---------------------------------------------------------------
    GAME SCREEN  (full overlay, flex column)
@@ -203,7 +143,7 @@
 }
 
 /* ---------------------------------------------------------------
-   TOP BAR  (back | label | timer)
+   TOP BAR
    --------------------------------------------------------------- */
 .spk-topbar {
     display: flex;
@@ -214,12 +154,9 @@
     border-bottom: 1px solid #1e293b;
 }
 .spk-back-btn {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    padding: 6px 8px;
+    background: none; border: none;
+    color: #94a3b8; font-size: 0.8125rem;
+    cursor: pointer; padding: 6px 8px;
     border-radius: 8px;
     transition: color 0.15s, background 0.15s;
     white-space: nowrap;
@@ -227,21 +164,13 @@
 .spk-back-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
 
 .spk-game-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #f1f5f9;
-    flex: 1;
-    text-align: center;
-    padding: 0 8px;
+    font-size: 0.875rem; font-weight: 600; color: #f1f5f9;
+    flex: 1; text-align: center; padding: 0 8px;
 }
 .spk-timer {
     font-family: 'Space Mono', monospace;
-    font-size: 1rem;
-    font-weight: 700;
-    color: #22d3ee;
-    min-width: 44px;
-    text-align: right;
-    white-space: nowrap;
+    font-size: 1rem; font-weight: 700; color: #22d3ee;
+    min-width: 44px; text-align: right; white-space: nowrap;
 }
 .spk-timer.spk-timer-warn {
     color: #ef4444;
@@ -249,31 +178,24 @@
 }
 @keyframes spk-pulse {
     from { opacity: 1; }
-    to   { opacity: 0.45; }
+    to   { opacity: 0.4; }
 }
 
 /* ---------------------------------------------------------------
-   MARKET MAKER META  (score + rule tag)
+   AFTER HOURS META ROW  ("Filled: X/Y" + rule tag)
    --------------------------------------------------------------- */
-.spk-mm-meta {
+.spk-ah-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 20px 0;
+    padding: 7px 20px 0;
     flex-shrink: 0;
 }
-.spk-mm-score {
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: #f1f5f9;
-}
-.spk-mm-rule {
-    font-size: 0.6875rem;
-    color: #64748b;
-}
+.spk-filled { font-size: 0.875rem; font-weight: 700; color: #f1f5f9; }
+.spk-ah-rule { font-size: 0.6875rem; color: #64748b; }
 
 /* ---------------------------------------------------------------
-   GAME ARENA  (diamond grid + overlays, takes remaining space)
+   GAME ARENA  (diamond + water + overlays, takes remaining height)
    --------------------------------------------------------------- */
 .spk-arena {
     flex: 1;
@@ -283,13 +205,11 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    /* reserve a bit of padding above the ledger */
-    padding-bottom: 8px;
 }
 
 /* ---------------------------------------------------------------
-   DIAMOND GRID  (identical layout to base game)
-   Cards inside reuse the global .card CSS from style.css
+   DIAMOND GRID  — identical layout to the base game.
+   Cards inside use the base-game's .card class from style.css.
    --------------------------------------------------------------- */
 .spk-diamond-grid {
     display: grid;
@@ -299,64 +219,64 @@
     width: 320px;
     height: 320px;
     position: relative;
-    z-index: 2;    /* sits above the water overlay */
+    z-index: 2;
+    flex-shrink: 0;
 }
-
-.spk-slot {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+.spk-slot { display: flex; align-items: center; justify-content: center; }
 .spk-slot-top    { grid-column: 2; grid-row: 1; }
 .spk-slot-left   { grid-column: 1; grid-row: 2; }
 .spk-slot-right  { grid-column: 3; grid-row: 2; }
 .spk-slot-bottom { grid-column: 2; grid-row: 3; }
 
-/* Undo row below the diamond */
+/* Undo row */
 .spk-undo-row {
-    position: relative;
-    z-index: 2;
+    position: relative; z-index: 2;
     height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
 }
 .spk-undo-btn {
-    background: none;
-    border: none;
-    color: #64748b;
-    font-size: 0.875rem;
-    cursor: pointer;
-    padding: 6px 14px;
-    border-radius: 8px;
+    background: none; border: none;
+    color: #64748b; font-size: 0.875rem;
+    cursor: pointer; padding: 6px 14px; border-radius: 8px;
     transition: color 0.15s, background 0.15s;
 }
 .spk-undo-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
 
+/* Inline microfeedback ("+1 · 8", "Already filled", etc.) */
+.spk-inline-fb {
+    position: relative; z-index: 2;
+    height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.875rem; font-weight: 600;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+.spk-inline-fb.spk-fb-show { opacity: 1; }
+.spk-inline-fb.spk-fb-new  { color: #10b981; }
+.spk-inline-fb.spk-fb-dupe { color: #f59e0b; }
+.spk-inline-fb.spk-fb-bad  { color: #ef4444; }
+
 /* ---------------------------------------------------------------
-   OPERATOR OVERLAY  (absolute within .spk-arena)
-   Uses the base-game's .operators-grid and .op-btn classes
-   so the operator buttons look and feel identical.
+   OPERATOR OVERLAY  (absolute inside .spk-arena)
+   Uses base-game .operators-grid + .op-btn for identical look.
    --------------------------------------------------------------- */
 .spk-op-overlay {
-    position: absolute;
-    inset: 0;
+    position: absolute; inset: 0;
     background: rgba(15, 23, 42, 0.6);
-    display: none;
-    align-items: center;
-    justify-content: center;
+    display: none; align-items: center; justify-content: center;
     z-index: 10;
 }
 .spk-op-overlay.spk-op-show { display: flex; }
 
 /* ---------------------------------------------------------------
-   WATER OVERLAY  (Flood mode — rises from bottom behind cards)
+   WATER OVERLAY  (rises from bottom behind cards, z-index: 1)
    --------------------------------------------------------------- */
 .spk-water {
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    bottom: 0; left: 0; right: 0;
     height: 0%;
     background: linear-gradient(
         to top,
@@ -366,68 +286,60 @@
     );
     transition: height 0.45s linear;
     pointer-events: none;
-    z-index: 1;    /* behind .spk-diamond-grid (z-index: 2) */
-    border-top: 1px solid rgba(34, 211, 238, 0.2);
+    z-index: 1;
+    border-top: 1px solid rgba(34, 211, 238, 0.18);
 }
-@media (prefers-reduced-motion: reduce) {
-    .spk-water { transition: none; }
-}
+@media (prefers-reduced-motion: reduce) { .spk-water { transition: none; } }
 
 /* ---------------------------------------------------------------
-   INLINE FEEDBACK FLASH  (Market Maker)
+   ORDER BOOK  (below arena, sorted slots for achievable integers)
    --------------------------------------------------------------- */
-.spk-feedback {
-    position: absolute;
-    bottom: 4px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 0.875rem;
-    font-weight: 600;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 2;
-}
-.spk-feedback.spk-fb-show  { opacity: 1; }
-.spk-feedback.spk-fb-new   { color: #10b981; }
-.spk-feedback.spk-fb-dupe  { color: #f59e0b; }
-.spk-feedback.spk-fb-bad   { color: #ef4444; }
-
-/* ---------------------------------------------------------------
-   LEDGER  (Market Maker — quoted-number chips row)
-   --------------------------------------------------------------- */
-.spk-ledger {
+.spk-order-book {
     flex-shrink: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    padding: 6px 16px 10px;
+    gap: 6px;
+    padding: 10px 16px 14px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     justify-content: center;
-    max-height: 88px;
+    background: #0f172a;
+    border-top: 1px solid #1e293b;
+    max-height: 128px;
     overflow-y: auto;
 }
 
-/* ---------------------------------------------------------------
-   CHIPS
-   --------------------------------------------------------------- */
-.spk-chip {
-    display: inline-flex;
+/* Individual order slot — empty circle until filled */
+.spk-order-slot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid #1e293b;
+    background: #0f172a;
+    display: flex;
     align-items: center;
     justify-content: center;
-    background: #0f2230;
-    border: 1px solid #22d3ee;
-    color: #22d3ee;
     font-family: 'Space Mono', monospace;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 20px;
-    min-width: 28px;
+    color: transparent;   /* number hidden until found */
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+    flex-shrink: 0;
+}
+
+/* Filled slot — number revealed with pop animation */
+.spk-order-slot.spk-found {
+    border-color: #22d3ee;
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+    animation: spk-slot-pop 0.3s ease-out;
+}
+@keyframes spk-slot-pop {
+    from { transform: scale(0.55); opacity: 0.4; }
+    to   { transform: scale(1);    opacity: 1;   }
 }
 
 /* ---------------------------------------------------------------
-   RESULT SCREEN  (win / fail / end)
+   RESULT SCREEN  (end of game)
    --------------------------------------------------------------- */
 .spk-result {
     flex: 1;
@@ -436,99 +348,79 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    padding: 32px 24px;
+    padding: 28px 24px;
     text-align: center;
+    overflow-y: auto;
     animation: spk-fade-in 0.3s ease-out;
 }
-.spk-result-icon {
-    font-size: 3rem;
-    line-height: 1;
-    margin-bottom: 4px;
-}
-.spk-result-heading {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #f1f5f9;
-}
-.spk-result-stat {
-    font-family: 'Space Mono', monospace;
-    font-size: 1.125rem;
-    color: #22d3ee;
-    font-weight: 700;
-}
-.spk-result-new-pb   { font-size: 0.875rem; font-weight: 700; color: #fbbf24; }
-.spk-result-prev-pb  { font-size: 0.8125rem; color: #64748b; }
-.spk-result-ledger   {
+.spk-result-icon    { font-size: 2.75rem; line-height: 1; margin-bottom: 2px; }
+.spk-result-heading { font-size: 1.375rem; font-weight: 700; color: #f1f5f9; }
+.spk-result-stat    { font-family: 'Space Mono', monospace; font-size: 1.125rem; color: #22d3ee; font-weight: 700; }
+.spk-result-new-pb  { font-size: 0.875rem; font-weight: 700; color: #fbbf24; }
+.spk-result-prev-pb { font-size: 0.8125rem; color: #64748b; }
+
+/* Full order book on the end screen */
+.spk-result-book {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
     justify-content: center;
-    max-width: 320px;
-    margin-top: 4px;
-}
-.spk-result-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
-    max-width: 240px;
-    margin-top: 14px;
+    max-width: 340px;
+    margin-top: 6px;
 }
 
-/* ---------------------------------------------------------------
-   BUTTONS  (result / share actions)
-   --------------------------------------------------------------- */
+/* Chips: base class shared by found and missed */
+.spk-chip-found,
+.spk-chip-missed {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    min-width: 28px;
+}
+.spk-chip-found  { background: rgba(34, 211, 238, 0.15); border: 1.5px solid #22d3ee; color: #22d3ee; }
+.spk-chip-missed { background: none; border: 1.5px solid #1e293b; color: #475569; }
+
+/* Result action buttons */
+.spk-result-actions {
+    display: flex; flex-direction: column;
+    gap: 10px; width: 100%; max-width: 240px;
+    margin-top: 12px;
+}
 .spk-btn {
     border-radius: 12px;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: 0.9375rem; font-weight: 600;
     padding: 12px 20px;
-    cursor: pointer;
-    border: none;
-    transition: background 0.15s, opacity 0.15s, transform 0.1s;
+    cursor: pointer; border: none;
+    transition: background 0.15s, transform 0.1s;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     width: 100%;
 }
 .spk-btn:active { transform: scale(0.97); }
-
 .spk-btn-primary { background: #22d3ee; color: #0f172a; }
 .spk-btn-primary:hover { background: #0891b2; }
-
-.spk-btn-share {
-    background: #0f172a;
-    color: #22d3ee;
-    border: 1px solid #22d3ee;
-}
+.spk-btn-share   { background: #0f172a; color: #22d3ee; border: 1px solid #22d3ee; }
 .spk-btn-share:hover { background: #0c3a4a; }
-
-.spk-btn-ghost {
-    background: none;
-    color: #94a3b8;
-    border: 1px solid #334155;
-}
+.spk-btn-ghost   { background: none; color: #94a3b8; border: 1px solid #334155; }
 .spk-btn-ghost:hover { color: #f1f5f9; border-color: #64748b; }
 
 /* ---------------------------------------------------------------
-   SECRET DOOR  (🔑 icon in the bottom-left of the victory card)
+   SECRET DOOR  (🔑 key icon in the bottom-left of victory card)
    --------------------------------------------------------------- */
 .spk-key-btn {
     position: absolute;
-    bottom: 14px;
-    left: 16px;
-    background: none;
-    border: none;
-    font-size: 1rem;
-    cursor: pointer;
-    opacity: 0.45;
-    padding: 6px;
-    border-radius: 8px;
-    line-height: 1;
+    bottom: 14px; left: 16px;
+    background: none; border: none;
+    font-size: 1rem; cursor: pointer;
+    opacity: 0.45; padding: 6px;
+    border-radius: 8px; line-height: 1;
     transition: opacity 0.2s, background 0.15s;
     -webkit-tap-highlight-color: transparent;
     z-index: 1;
 }
-.spk-key-btn:hover {
-    opacity: 1;
-    background: rgba(255, 255, 255, 0.07);
-}
+.spk-key-btn:hover { opacity: 1; background: rgba(255,255,255,0.07); }
