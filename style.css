@@ -271,6 +271,26 @@ body {
 .shake-guidance .guidance-steps li {
     margin-bottom: 3px;
 }
+/* Collapsed <details> wrapper for shake guidance */
+.shake-guidance .guidance-details {
+    cursor: pointer;
+}
+.shake-guidance .guidance-details summary {
+    font-size: 0.75rem;
+    color: #22d3ee;
+    list-style: none;
+    margin-bottom: 4px;
+}
+.shake-guidance .guidance-details summary::-webkit-details-marker { display: none; }
+.shake-guidance .guidance-details[open] summary { margin-bottom: 8px; }
+
+/* Note beneath backup section label */
+.settings-backup-note {
+    font-size: 0.75rem;
+    color: #475569;
+    margin: 0 0 8px;
+    line-height: 1.4;
+}
 
 /* Sync section in archive modal */
 .sync-section {

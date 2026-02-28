@@ -475,3 +475,130 @@
     z-index: 1;
 }
 .spk-key-btn:hover { opacity: 1; background: rgba(255,255,255,0.07); }
+
+/* ---------------------------------------------------------------
+   PAYWALL MODAL  (reuses .spk-intro-card as card base)
+   --------------------------------------------------------------- */
+.spk-paywall-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    align-items: center;
+    margin-top: 4px;
+}
+
+/* "Not now" tertiary dismiss — minimal, no background */
+.spk-paywall-dismiss {
+    background: none; border: none;
+    color: #475569; font-size: 0.875rem;
+    cursor: pointer; padding: 6px 12px;
+    border-radius: 8px;
+    transition: color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+.spk-paywall-dismiss:hover { color: #94a3b8; }
+
+/* ---------------------------------------------------------------
+   LICENSE ENTRY MODAL
+   --------------------------------------------------------------- */
+.spk-license-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    color: #f1f5f9;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.9375rem;
+    letter-spacing: 0.06em;
+    padding: 10px 12px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.15s;
+    margin-top: 4px;
+}
+.spk-license-input:focus { border-color: #22d3ee; }
+
+.spk-license-status {
+    font-size: 0.8125rem;
+    min-height: 1.2em;
+    text-align: center;
+    color: #64748b;
+}
+.spk-license-status.spk-status-ok  { color: #22d3ee; }
+.spk-license-status.spk-status-err { color: #ef4444; }
+
+/* ---------------------------------------------------------------
+   SETTINGS — AFTER HOURS SECTION
+   --------------------------------------------------------------- */
+.settings-section-title {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 18px 0 6px;
+}
+
+.spk-settings-ah {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.spk-settings-ah-status {
+    font-size: 0.875rem;
+    color: #94a3b8;
+    margin: 0;
+}
+.spk-settings-ah-status strong { color: #22d3ee; }
+
+.spk-settings-ah-btns {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------
+   DEV PANEL  (only shown when ?dev=1)
+   --------------------------------------------------------------- */
+.spk-dev-panel {
+    position: fixed;
+    bottom: 80px;
+    left: 8px;
+    z-index: 9999;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 12px;
+    color: #94a3b8;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: all;
+}
+.spk-dev-title {
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 2px;
+}
+.spk-dev-panel button {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #94a3b8;
+    font-size: 11px;
+    padding: 4px 8px;
+    cursor: pointer;
+    text-align: left;
+}
+.spk-dev-panel button:hover { color: #f1f5f9; border-color: #475569; }
+.spk-dev-meta {
+    font-size: 10px;
+    color: #475569;
+    margin-top: 4px;
+    line-height: 1.5;
+    word-break: break-all;
+}

@@ -172,7 +172,8 @@
     <div class="modal-overlay" id="settingsModal">
         <div class="modal">
             <h2>Settings</h2>
-            <!-- Shake to undo setting -->
+
+            <!-- A: Controls -->
             <div class="setting-row" id="shakeSettingRow">
                 <div class="setting-info">
                     <span class="setting-label">Shake to undo</span>
@@ -182,46 +183,26 @@
                     <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </button>
             </div>
+            <!-- shake guidance injected by app.js into this element -->
             <div class="shake-guidance" id="shakeGuidance"></div>
 
-            <div class="sync-section" id="syncSection">
-                <div class="sync-label" id="syncLabel">Keep your streak across devices</div>
-                <div class="sync-methods" id="syncMethods">
-                    <button class="google-btn" id="googleSignInBtn" aria-label="Sign in with Google">
-                        <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                        Continue with Google
-                    </button>
-                    <div class="sync-divider">or use email code</div>
-                    <div class="email-otp-row" id="emailOtpRow">
-                        <input type="email" class="email-otp-input" id="otpEmailInput" placeholder="your@email.com" autocomplete="email" autocapitalize="off" aria-label="Email address">
-                        <button class="email-send-btn" id="otpSendBtn" aria-label="Send verification code">Send code</button>
-                    </div>
-                    <div class="otp-verify-row" id="otpVerifyRow">
-                        <input type="text" class="otp-code-input" id="otpCodeInput" placeholder="6-digit code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" aria-label="Verification code">
-                        <button class="otp-verify-btn" id="otpVerifyBtn" aria-label="Verify code">Verify</button>
-                    </div>
-                    <div class="sync-status" id="syncStatus"></div>
+            <!-- B: Backup -->
+            <div class="backup-section">
+                <div class="sync-label">Backup</div>
+                <p class="settings-backup-note">Progress is stored on this device. Export or import to move it.</p>
+                <div class="sync-methods">
+                    <button class="email-send-btn" id="exportProgressBtn" aria-label="Export progress">Export progress</button>
+                    <button class="otp-verify-btn" id="importProgressBtn" aria-label="Import progress">Import progress</button>
+                    <input type="file" id="importProgressFile" accept="application/json" style="display:none;">
                 </div>
-                <div id="syncSignedInView" style="display:none;">
-                    <button class="sync-signout" id="syncSignOutBtn" aria-label="Sign out">Sign out</button>
-                </div>
-                <div class="backup-section">
-                    <div class="sync-label">Backup</div>
-                    <div class="sync-methods">
-                        <button class="email-send-btn" id="exportProgressBtn" aria-label="Export progress">Export progress</button>
-                        <button class="otp-verify-btn" id="importProgressBtn" aria-label="Import progress">Import progress</button>
-                        <input type="file" id="importProgressFile" accept="application/json" style="display:none;">
-                    </div>
-                    <div class="sync-status" id="backupStatus"></div>
-                </div>
+                <div class="sync-status" id="backupStatus"></div>
             </div>
+
+            <!-- C: After Hours status — injected by speakeasy.js when relevant -->
+            <div id="settingsAhSection"></div>
+
             <button class="modal-close" id="closeSettings" aria-label="Close">Close</button>
         </div>
-    </div>
-
-    <div class="sync-nudge" id="syncNudge">
-        🔥 Nice streak! <span class="sync-nudge-link" id="syncNudgeLink">Sign in</span> to keep it across devices.
-        <span class="sync-nudge-dismiss" id="syncNudgeDismiss" aria-label="Dismiss">✕</span>
     </div>
 
     <div class="sync-error-toast" id="syncErrorToast"></div>
