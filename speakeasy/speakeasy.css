@@ -65,45 +65,33 @@
 }
 .spk-back-btn {
     background: none; border: none;
-    color: #94a3b8; font-size: 0.8125rem;
+    color: #94a3b8; font-size: 1.5rem;
     cursor: pointer; padding: 6px 8px;
-    border-radius: 8px;
+    border-radius: 8px; min-width: 44px;
+    text-align: center; line-height: 1;
     transition: color 0.15s, background 0.15s;
-    white-space: nowrap;
 }
 .spk-back-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
+
+/* Balances the centred "After Hours" label when the right side is empty */
+.spk-topbar-spacer { min-width: 44px; }
+
+/* Topbar 🔑 key (placement A — injected after #streakDisplay in the app header) */
+.spk-key-topbar {
+    background: none; border: none;
+    font-size: 1rem; cursor: pointer;
+    opacity: 0.45; padding: 4px;
+    border-radius: 8px; line-height: 1;
+    transition: opacity 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+}
+.spk-key-topbar:hover { opacity: 1; }
 
 .spk-game-label {
     font-size: 0.875rem; font-weight: 600; color: #f1f5f9;
     flex: 1; text-align: center; padding: 0 8px;
 }
-.spk-timer {
-    font-family: 'Space Mono', monospace;
-    font-size: 1rem; font-weight: 700; color: #22d3ee;
-    min-width: 44px; text-align: right; white-space: nowrap;
-}
-.spk-timer.spk-timer-warn {
-    color: #ef4444;
-    animation: spk-pulse 0.6s ease-in-out infinite alternate;
-}
-@keyframes spk-pulse {
-    from { opacity: 1; }
-    to   { opacity: 0.4; }
-}
-
-/* ---------------------------------------------------------------
-   AFTER HOURS META ROW  ("Filled: X/Y" + rule tag)
-   --------------------------------------------------------------- */
-.spk-ah-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 20px 0;
-    flex-shrink: 0;
-}
-.spk-filled { font-size: 0.875rem; font-weight: 700; color: #f1f5f9; }
-.spk-ah-rule { font-size: 0.6875rem; color: #64748b; }
-
 /* ---------------------------------------------------------------
    GAME ARENA  (diamond + water + bubble overlay, takes remaining height)
    --------------------------------------------------------------- */
@@ -274,6 +262,10 @@
 @keyframes spk-wave {
     0%,  100% { transform: translateX(0)   scaleY(1.1); }
     50%        { transform: translateX(6%)  scaleY(0.7); }
+}
+/* Subtle urgency cue in the final 30 s — wave speeds up, no numbers needed */
+.spk-water.spk-water-urgent::after {
+    animation-duration: 1.2s;
 }
 @media (prefers-reduced-motion: reduce) {
     .spk-water { transition: none; }
@@ -469,11 +461,11 @@
 }
 
 /* ---------------------------------------------------------------
-   SECRET DOOR  (🔑 key icon in the bottom-left of victory card)
+   SECRET DOOR  (🔑 key icon — victory card top-right, near the × button)
    --------------------------------------------------------------- */
 .spk-key-btn {
     position: absolute;
-    bottom: 14px; left: 16px;
+    top: 12px; right: 42px;  /* just left of the × close button at right: 12px */
     background: none; border: none;
     font-size: 1rem; cursor: pointer;
     opacity: 0.45; padding: 6px;

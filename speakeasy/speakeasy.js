@@ -77,6 +77,15 @@
         return false;
     }
 
+    // Returns true when today's daily puzzle is already solved (reads app.js's localStorage key).
+    function isTodaySolved() {
+        try {
+            const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
+            const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : null;
+            return today !== null && !!saved?.history?.[today]?.completed;
+        } catch (_) { return false; }
+    }
+
     window.make24DebugSetRegistered = function (val) {
         if (val) {
             localStorage.setItem('make24_registered', '1');
@@ -456,7 +465,6 @@
         const cx = arenaRect.left + arenaRect.width  / 2 - screenRect.left;
         const cy = arenaRect.top  + arenaRect.height / 2 - screenRect.top - 30;
 
-        const N        = orderBook.length;
         const BUBBLE_D = 30;          // diameter (px) — update .spk-bubble in CSS too
         const BR       = BUBBLE_D / 2;
 
@@ -473,16 +481,8 @@
         // Use the smaller of the two so the ellipse is symmetric top-to-bottom.
         const ry = Math.min(ryUp, ryDown);
 
-        let rings;
-        if (N <= 22) {
-            rings = [{ items: orderBook, rx, ry }];
-        } else {
-            const half = Math.ceil(N / 2);
-            rings = [
-                { items: orderBook.slice(0, half), rx,       ry       },
-                { items: orderBook.slice(half),    rx: rx * 0.70, ry: ry * 0.70 },
-            ];
-        }
+        // Always one ring — max 24 bubbles fits a single ellipse comfortably.
+        const rings = [{ items: orderBook, rx, ry }];
 
         rings.forEach(({ items, rx, ry }) => {
             items.forEach((n, i) => {
@@ -702,13 +702,9 @@
 <div class="spk-game-screen">
   <div class="spk-bubbles-container" id="spkBubbles">${bubblesHTML}</div>
   <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Back">&#8592; Back</button>
+    <button class="spk-back-btn" aria-label="Exit After Hours">&#8249;</button>
     <span class="spk-game-label">After Hours</span>
-    <span class="spk-timer" id="spkTimer">${fmtTimer(durationMs)}</span>
-  </div>
-  <div class="spk-ah-meta">
-    <span class="spk-filled" id="spkFilled">Filled: 0/${totalOrders}</span>
-    <span class="spk-ah-rule">Integers 1&ndash;${ORDER_MAX}</span>
+    <div class="spk-topbar-spacer"></div>
   </div>
   <div class="spk-arena" id="spkArena">
     <div class="spk-diamond-grid">
@@ -735,9 +731,7 @@
 
             const gameScreen = el.querySelector('.spk-game-screen');
             const arenaEl    = el.querySelector('#spkArena');
-            const timerEl    = el.querySelector('#spkTimer');
             const waterEl    = el.querySelector('#spkWater');
-            const filledEl   = el.querySelector('#spkFilled');
             const fbEl       = el.querySelector('#spkFb');
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
@@ -756,7 +750,6 @@
 
             function markFilled(n) {
                 foundSet.add(n);
-                filledEl.textContent = `Filled: ${foundSet.size}/${totalOrders}`;
                 const bubble = el.querySelector(`.spk-bubble[data-order="${n}"]`);
                 if (bubble && !bubble.classList.contains('spk-bubble-found')) {
                     bubble.textContent = n;
@@ -817,16 +810,14 @@
                 if (remaining <= 0) {
                     finished = true;
                     waterEl.style.height = '100%';
-                    timerEl.textContent  = '0:00';
-                    timerEl.classList.add('spk-timer-warn');
                     saveAhBest(foundSet.size, totalOrders);
                     _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, false);
                     return;
                 }
 
                 waterEl.style.height = ((elapsed / durationMs) * 100).toFixed(1) + '%';
-                timerEl.textContent  = fmtTimer(remaining);
-                timerEl.classList.toggle('spk-timer-warn', remaining < 15000);
+                // Low-time cue: faster wave in the final 30 s (no numbers — water IS the clock).
+                waterEl.classList.toggle('spk-water-urgent', remaining < 30000);
                 rafId = requestAnimationFrame(tick);
             }
         });
@@ -870,26 +861,45 @@
     }
 
     // ============================================================
-    // SECRET DOOR  (🔑 injected into the victory card)
+    // KEY INJECTION  (two placements, both gated: registered + today solved)
     // ============================================================
-    function injectKeyIcon() {
+
+    // Placement B: top-right of the victory card, near the badge.
+    // Condition: isRegistered() AND isTodaySolved().
+    function injectKeyIntoVictoryCard() {
+        if (!isRegistered() || !isTodaySolved()) return;
         const card = document.getElementById('victoryCard');
         if (!card) return;
         const old = document.getElementById('spkKeyBtn');
         if (old) old.remove();
-        if (!isRegistered()) return;
 
         const btn = document.createElement('button');
         btn.id        = 'spkKeyBtn';
         btn.className = 'spk-key-btn';
-        btn.setAttribute('aria-label', 'After-hours');
-        btn.setAttribute('title', 'After-hours');
+        btn.setAttribute('aria-label', 'After Hours');
+        btn.setAttribute('title', 'After Hours');
         btn.textContent = '🔑';
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            launchAfterHours();
-        });
+        btn.addEventListener('click', (e) => { e.stopPropagation(); launchAfterHours(); });
         card.appendChild(btn);
+    }
+
+    // Placement A: header top-bar, inserted after #streakDisplay.
+    // Condition: isRegistered() AND isTodaySolved().
+    // Idempotent — safe to call repeatedly; only inserts once.
+    function injectTopbarKey() {
+        if (!isRegistered() || !isTodaySolved()) return;
+        if (document.getElementById('spkTopbarKeyBtn')) return;
+        const streakEl = document.getElementById('streakDisplay');
+        if (!streakEl) return;
+
+        const btn = document.createElement('button');
+        btn.id        = 'spkTopbarKeyBtn';
+        btn.className = 'spk-key-topbar';
+        btn.setAttribute('aria-label', 'After Hours');
+        btn.setAttribute('title', 'After Hours');
+        btn.textContent = '🔑';
+        btn.addEventListener('click', launchAfterHours);
+        streakEl.insertAdjacentElement('afterend', btn);
     }
 
     // ============================================================
@@ -903,10 +913,13 @@
             const visible = backdrop.classList.contains('show');
             if (visible && !wasVisible) {
                 wasVisible = true;
-                if (isRegistered()) injectKeyIcon();
+                // Victory card just opened — inject key in both locations.
+                injectKeyIntoVictoryCard();
+                injectTopbarKey();
             }
             if (!visible && wasVisible) {
                 wasVisible = false;
+                // Card closed — remove the victory-card key (topbar key stays).
                 const k = document.getElementById('spkKeyBtn');
                 if (k) k.remove();
             }
@@ -919,10 +932,15 @@
     // ============================================================
     async function init() {
         refreshAuthState().catch(() => {});
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', observeVictoryCard);
-        } else {
+        const setup = () => {
             observeVictoryCard();
+            // If today was already solved before page load, show the topbar key immediately.
+            injectTopbarKey();
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setup);
+        } else {
+            setup();
         }
     }
 
