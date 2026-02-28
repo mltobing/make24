@@ -4,6 +4,8 @@
    Cards (.card, .selected, .first, .second) and operator buttons
    (.op-btn, .operators-grid) intentionally reuse base-game classes
    from style.css so they look pixel-identical to the daily puzzle.
+
+   TUNE: ORDER_MIN, ORDER_MAX, SECONDS_PER_ORDER live in speakeasy.js.
    ============================================================= */
 
 /* ---------------------------------------------------------------
@@ -24,112 +26,19 @@
     display: flex;
     animation: spk-fade-in 0.2s ease-out;
 }
+/* Centered variant — used for intro card and thin-market notice */
+.spk-overlay.spk-overlay-center {
+    align-items: center;
+    justify-content: center;
+}
 @keyframes spk-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
 }
 
 /* ---------------------------------------------------------------
-   BOTTOM SHEET  (menu)
-   --------------------------------------------------------------- */
-.spk-sheet {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 20px 20px 0 0;
-    width: 100%;
-    max-width: 440px;
-    max-height: 92dvh;
-    overflow-y: auto;
-    padding: 20px 20px 32px;
-    padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
-    position: relative;
-    animation: spk-sheet-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-@keyframes spk-sheet-in {
-    from { transform: translateY(40px); opacity: 0; }
-    to   { transform: translateY(0);    opacity: 1; }
-}
-
-/* Game screen fills the whole overlay */
-.spk-overlay.spk-visible .spk-game-screen {
-    border-radius: 0;
-    max-height: 100dvh;
-}
-
-/* Close button */
-.spk-close-btn {
-    position: absolute;
-    top: 14px; right: 14px;
-    background: none;
-    border: none;
-    color: #64748b;
-    font-size: 1.4rem;
-    line-height: 1;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: color 0.15s, background 0.15s;
-}
-.spk-close-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.06); }
-
-/* ---------------------------------------------------------------
-   MENU HEADER
-   --------------------------------------------------------------- */
-.spk-menu-header {
-    text-align: center;
-    margin-bottom: 20px;
-}
-.spk-menu-title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #f1f5f9;
-    margin-bottom: 4px;
-}
-.spk-menu-subtitle {
-    font-size: 0.8125rem;
-    color: #94a3b8;
-    margin-bottom: 8px;
-}
-.spk-menu-digits {
-    font-family: 'Space Mono', monospace;
-    font-size: 1rem;
-    color: #22d3ee;
-    letter-spacing: 0.05em;
-}
-
-/* ---------------------------------------------------------------
-   MODE CARD  (single entry in the menu)
-   --------------------------------------------------------------- */
-.spk-mode-list { display: flex; flex-direction: column; }
-
-.spk-mode-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 14px;
-    padding: 16px;
-    text-align: left;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-    width: 100%;
-    color: inherit;
-}
-.spk-mode-card:hover,
-.spk-mode-card:focus-visible {
-    border-color: #22d3ee;
-    background: #172032;
-    outline: none;
-}
-.spk-mode-icon { font-size: 1.75rem; line-height: 1; flex-shrink: 0; margin-top: 2px; }
-.spk-mode-info { flex: 1; min-width: 0; }
-.spk-mode-name { font-size: 0.9375rem; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
-.spk-mode-desc { font-size: 0.8125rem; color: #94a3b8; margin-bottom: 5px; line-height: 1.4; }
-.spk-mode-pb   { font-size: 0.75rem; color: #22d3ee; font-weight: 500; }
-
-/* ---------------------------------------------------------------
    GAME SCREEN  (full overlay, flex column)
+   position:relative is required for the absolute bubbles container.
    --------------------------------------------------------------- */
 .spk-game-screen {
     display: flex;
@@ -139,6 +48,7 @@
     height: 100dvh;
     background: #0f172a;
     overflow: hidden;
+    position: relative;
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -195,7 +105,7 @@
 .spk-ah-rule { font-size: 0.6875rem; color: #64748b; }
 
 /* ---------------------------------------------------------------
-   GAME ARENA  (diamond + water + overlays, takes remaining height)
+   GAME ARENA  (diamond + water + bubble overlay, takes remaining height)
    --------------------------------------------------------------- */
 .spk-arena {
     flex: 1;
@@ -205,6 +115,64 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+}
+
+/* ---------------------------------------------------------------
+   BUBBLE RING  (order slots positioned around the arena)
+   Absolutely positioned relative to .spk-game-screen.
+   positionBubbles() in JS sets each bubble's left/top after layout.
+   --------------------------------------------------------------- */
+.spk-bubbles-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.spk-bubble {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 2px solid rgba(71, 85, 105, 0.65);
+    background: radial-gradient(
+        ellipse at 35% 30%,
+        rgba(148, 163, 184, 0.12) 0%,
+        rgba(15, 23, 42, 0.55) 70%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.09),
+        0 1px 4px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: transparent;          /* number hidden until filled */
+    cursor: default;
+    transition: border-color 0.25s, background 0.25s, box-shadow 0.25s, color 0.25s;
+}
+
+/* Filled bubble — number revealed with a pop + glow */
+.spk-bubble.spk-bubble-found {
+    border-color: #22d3ee;
+    background: radial-gradient(
+        ellipse at 40% 30%,
+        rgba(34, 211, 238, 0.35) 0%,
+        rgba(34, 211, 238, 0.12) 60%,
+        rgba(15, 23, 42, 0.6) 100%
+    );
+    box-shadow:
+        0 0 8px rgba(34, 211, 238, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    color: #22d3ee;
+    animation: spk-bubble-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes spk-bubble-pop {
+    from { transform: scale(0.45); opacity: 0.3; }
+    to   { transform: scale(1);    opacity: 1;   }
 }
 
 /* ---------------------------------------------------------------
@@ -272,7 +240,8 @@
 .spk-op-overlay.spk-op-show { display: flex; }
 
 /* ---------------------------------------------------------------
-   WATER OVERLAY  (rises from bottom behind cards, z-index: 1)
+   WATER OVERLAY  (rises from bottom, z-index 1)
+   ::after creates a subtle wavy surface line — CSS-only, low battery cost.
    --------------------------------------------------------------- */
 .spk-water {
     position: absolute;
@@ -287,55 +256,28 @@
     transition: height 0.45s linear;
     pointer-events: none;
     z-index: 1;
-    border-top: 1px solid rgba(34, 211, 238, 0.18);
-}
-@media (prefers-reduced-motion: reduce) { .spk-water { transition: none; } }
-
-/* ---------------------------------------------------------------
-   ORDER BOOK  (below arena, sorted slots for achievable integers)
-   --------------------------------------------------------------- */
-.spk-order-book {
-    flex-shrink: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 10px 16px 14px;
-    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    justify-content: center;
-    background: #0f172a;
-    border-top: 1px solid #1e293b;
-    max-height: 128px;
-    overflow-y: auto;
 }
 
-/* Individual order slot — empty circle until filled */
-.spk-order-slot {
-    width: 36px;
-    height: 36px;
+/* Wavy surface line — oval that oscillates side-to-side */
+.spk-water::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: -25%;
+    width: 150%;
+    height: 13px;
     border-radius: 50%;
-    border: 2px solid #1e293b;
-    background: #0f172a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: 'Space Mono', monospace;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: transparent;   /* number hidden until found */
-    transition: border-color 0.2s, background 0.2s, color 0.2s;
-    flex-shrink: 0;
+    background: rgba(34, 211, 238, 0.42);
+    will-change: transform;
+    animation: spk-wave 3.2s ease-in-out infinite;
 }
-
-/* Filled slot — number revealed with pop animation */
-.spk-order-slot.spk-found {
-    border-color: #22d3ee;
-    background: rgba(34, 211, 238, 0.15);
-    color: #22d3ee;
-    animation: spk-slot-pop 0.3s ease-out;
+@keyframes spk-wave {
+    0%,  100% { transform: translateX(0)   scaleY(1.1); }
+    50%        { transform: translateX(6%)  scaleY(0.7); }
 }
-@keyframes spk-slot-pop {
-    from { transform: scale(0.55); opacity: 0.4; }
-    to   { transform: scale(1);    opacity: 1;   }
+@media (prefers-reduced-motion: reduce) {
+    .spk-water { transition: none; }
+    .spk-water::after { animation: none; }
 }
 
 /* ---------------------------------------------------------------
@@ -358,6 +300,7 @@
 .spk-result-stat    { font-family: 'Space Mono', monospace; font-size: 1.125rem; color: #22d3ee; font-weight: 700; }
 .spk-result-new-pb  { font-size: 0.875rem; font-weight: 700; color: #fbbf24; }
 .spk-result-prev-pb { font-size: 0.8125rem; color: #64748b; }
+.spk-result-hint    { font-size: 0.75rem; color: #475569; }
 
 /* Full order book on the end screen */
 .spk-result-book {
@@ -366,10 +309,10 @@
     gap: 5px;
     justify-content: center;
     max-width: 340px;
-    margin-top: 6px;
+    margin-top: 4px;
 }
 
-/* Chips: base class shared by found and missed */
+/* Chips: shared base */
 .spk-chip-found,
 .spk-chip-missed {
     display: inline-flex;
@@ -384,6 +327,16 @@
 }
 .spk-chip-found  { background: rgba(34, 211, 238, 0.15); border: 1.5px solid #22d3ee; color: #22d3ee; }
 .spk-chip-missed { background: none; border: 1.5px solid #1e293b; color: #475569; }
+/* Tappable missed chip (has a stored solution) */
+.spk-chip-tappable {
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.spk-chip-tappable:hover {
+    border-color: #64748b;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.04);
+}
 
 /* Result action buttons */
 .spk-result-actions {
@@ -408,6 +361,112 @@
 .spk-btn-share:hover { background: #0c3a4a; }
 .spk-btn-ghost   { background: none; color: #94a3b8; border: 1px solid #334155; }
 .spk-btn-ghost:hover { color: #f1f5f9; border-color: #64748b; }
+
+/* ---------------------------------------------------------------
+   INTRO CARD  (first-run modal, centred in the overlay)
+   --------------------------------------------------------------- */
+.spk-intro-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 32px 28px 28px;
+    max-width: 320px;
+    width: calc(100% - 40px);
+    text-align: center;
+    animation: spk-intro-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes spk-intro-in {
+    from { transform: scale(0.86); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+.spk-intro-icon  { font-size: 3rem; line-height: 1; margin-bottom: 14px; }
+.spk-intro-title { font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 10px; }
+.spk-intro-body  { font-size: 1rem; color: #94a3b8; line-height: 1.5; margin-bottom: 12px; }
+.spk-intro-tag   { font-size: 0.8125rem; color: #22d3ee; font-weight: 500; margin-bottom: 24px; }
+.spk-intro-start,
+.spk-intro-close { width: auto; padding: 12px 36px; display: inline-block; }
+
+/* ---------------------------------------------------------------
+   SOLUTION MODAL  (tapped from end screen, layered above game screen)
+   --------------------------------------------------------------- */
+.spk-solution-modal {
+    position: absolute;
+    inset: 0;
+    background: rgba(9, 15, 28, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    animation: spk-fade-in 0.18s ease-out;
+    padding: 24px 20px;
+}
+
+.spk-sol-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 18px;
+    padding: 24px 20px 20px;
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    animation: spk-intro-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.spk-sol-heading {
+    font-size: 1rem; font-weight: 700; color: #94a3b8;
+}
+.spk-sol-n {
+    color: #22d3ee;
+    font-size: 1.25rem;
+}
+.spk-sol-expr {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1.4;
+    word-break: break-all;
+}
+.spk-sol-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+.spk-sol-watch,
+.spk-sol-close { width: 100%; padding: 11px 20px; }
+
+/* ---------------------------------------------------------------
+   MINI BOARD  (used for demo animation inside the solution modal)
+   Identical grid structure to the main diamond, scaled to 200×200.
+   The .card class from style.css still applies; we constrain its size.
+   --------------------------------------------------------------- */
+.spk-mini-board {
+    width: 200px;
+    height: 200px;
+    position: relative;
+    flex-shrink: 0;
+}
+.spk-mini-diamond-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: 8px;
+    width: 200px;
+    height: 200px;
+    position: relative;
+    z-index: 2;
+}
+/* Shrink cards to fit the mini grid cells (~60×60 px) */
+.spk-mini-diamond-grid .card {
+    width: 56px;
+    height: 56px;
+    font-size: 1rem;
+    border-radius: 12px;
+}
 
 /* ---------------------------------------------------------------
    SECRET DOOR  (🔑 key icon in the bottom-left of victory card)
