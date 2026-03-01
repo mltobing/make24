@@ -678,3 +678,47 @@
 .spk-settings-feedback-row {
     margin-bottom: 6px;
 }
+
+/* ---------------------------------------------------------------
+   PERFECT COMPLETION — bubble wave celebration
+   --------------------------------------------------------------- */
+@keyframes spk-bubble-celebrate {
+    0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
+    45%  { transform: scale(1.45); box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
+    100% { transform: scale(1);    box-shadow: 0 0 0 0  rgba(34, 211, 238, 0); }
+}
+.spk-bubble.spk-bubble-celebrate {
+    animation: spk-bubble-celebrate 0.55s ease-out;
+}
+
+/* ---------------------------------------------------------------
+   PERFECT END SCREEN  (.spk-result.spk-result-perfect)
+   --------------------------------------------------------------- */
+.spk-result.spk-result-perfect { gap: 12px; }
+
+.spk-result.spk-result-perfect .spk-result-icon {
+    font-size: 3.25rem;
+    animation: spk-result-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes spk-result-pop {
+    from { transform: scale(0.3); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+}
+
+.spk-result.spk-result-perfect .spk-result-heading {
+    font-size: 1.75rem;
+    color: #22d3ee;
+    letter-spacing: 0.02em;
+}
+
+.spk-result.spk-result-perfect .spk-result-stat {
+    font-size: 1.25rem;
+    color: #fbbf24;
+}
+
+/* All found-chips get a teal tint on a perfect run */
+.spk-result.spk-result-perfect .spk-chip-found {
+    background: rgba(34, 211, 238, 0.18);
+    color: #22d3ee;
+    border-color: rgba(34, 211, 238, 0.45);
+}

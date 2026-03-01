@@ -2339,19 +2339,8 @@ function updateShakeToggleUI() {
 }
 
 function getIOSGuidanceHTML() {
-    // Wrapped in <details> so it is collapsed by default — no essay on first open.
-    return `
-        <details class="guidance-details">
-          <summary>How to enable</summary>
-          <p>Safari asks for permission each visit. To allow permanently:</p>
-          <ol class="guidance-steps">
-            <li>Open <b>Settings</b> on your iPhone</li>
-            <li>Scroll to <b>Safari</b> → <b>Advanced</b> → <b>Website Data</b></li>
-            <li>Find <b>make24.app</b> and enable <b>Motion &amp; Orientation</b></li>
-          </ol>
-          <p>Or in Safari: tap <b>aA</b> in the address bar → <b>Website Settings</b> → enable <b>Motion &amp; Orientation</b>.</p>
-        </details>
-    `;
+    // Safari requests motion permission per-session via user gesture; no permanent setting exists.
+    return '<p>Tap the toggle each session to allow motion access.</p>';
 }
 
 async function handleShakeToggle() {
