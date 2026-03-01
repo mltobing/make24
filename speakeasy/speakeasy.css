@@ -73,8 +73,33 @@
 }
 .spk-back-btn:hover { color: #f1f5f9; background: rgba(255,255,255,0.05); }
 
-/* Balances the centred "After Hours" label when the right side is empty */
-.spk-topbar-spacer { min-width: 44px; }
+/* Balances the centred "After Hours" label; holds the last-30s countdown on the right */
+.spk-topbar-spacer {
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+/* ── Last-30s red countdown ─────────────────────────────────────── */
+.spk-countdown {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #ef4444;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+    min-width: 36px;
+    text-align: right;
+    transition: opacity 0.5s ease;
+}
+.spk-countdown.spk-countdown-visible { opacity: 1; }
+.spk-countdown.spk-countdown-pulse   { animation: spk-count-blink 0.55s ease-in-out infinite alternate; }
+@keyframes spk-count-blink {
+    from { opacity: 1; }
+    to   { opacity: 0.35; }
+}
 
 /* Topbar 🔑 key (placement A — injected after #streakDisplay in the app header) */
 .spk-key-topbar {
@@ -601,4 +626,55 @@
     margin-top: 4px;
     line-height: 1.5;
     word-break: break-all;
+}
+
+/* ---------------------------------------------------------------
+   FEEDBACK MODAL  (Settings → "Send feedback")
+   --------------------------------------------------------------- */
+/* Make the feedback card a bit wider so textarea breathes */
+.spk-feedback-card {
+    width: 100%;
+    max-width: 360px;
+}
+
+.spk-feedback-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    color: #f1f5f9;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    padding: 10px 12px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+    margin-top: 4px;
+}
+.spk-feedback-textarea:focus { border-color: #22d3ee; }
+
+.spk-feedback-email {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    color: #f1f5f9;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.875rem;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.spk-feedback-email:focus { border-color: #22d3ee; }
+.spk-feedback-email::placeholder { color: #475569; }
+
+/* ---------------------------------------------------------------
+   SETTINGS — SUPPORT ROW  (optional tip link)
+   --------------------------------------------------------------- */
+.spk-settings-support-row,
+.spk-settings-feedback-row {
+    margin-bottom: 6px;
 }

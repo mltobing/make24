@@ -62,6 +62,19 @@
     const UNLOCKED_KEY    = 'make24_afterhours_unlocked';    // "1" when permanently unlocked
     const LICENSE_KEY_KEY = 'make24_afterhours_license_key'; // stored license key (full string)
 
+    // ── FEATURE FLAGS ─────────────────────────────────────────────────
+    // Set HARD_MODE_PAYWALL_ENABLED = true to re-enable the trial + Lemon Squeezy unlock flow.
+    // When false (default), Hard Mode is always free once the daily puzzle is solved.
+    const HARD_MODE_PAYWALL_ENABLED = false;
+
+    // Optional tip-jar link shown in Settings. Off by default.
+    // To enable: set SUPPORT_ENABLED = true and fill in SUPPORT_URL.
+    const SUPPORT_ENABLED = false;
+    const SUPPORT_URL     = '';   // e.g. 'https://ko-fi.com/yourname'
+    const SUPPORT_LABEL   = 'Support';
+
+    const FEEDBACK_EMAIL  = 'martin@kapework.com';
+
     // ============================================================
     // GATE + ACCESS MODEL
     // ============================================================
@@ -116,7 +129,9 @@
     function trialUsedCount() { return getTrialDays().size; }
 
     // True if user can enter After Hours right now.
+    // When HARD_MODE_PAYWALL_ENABLED is false, always returns true (free post-solve).
     function canEnterAfterHoursToday() {
+        if (!HARD_MODE_PAYWALL_ENABLED) return true;
         return isUnlocked() || trialUsedCount() < TRIAL_DAYS_MAX;
     }
 
@@ -752,7 +767,9 @@
   <div class="spk-topbar">
     <button class="spk-back-btn" aria-label="Exit After Hours">&#8249;</button>
     <span class="spk-game-label">After Hours</span>
-    <div class="spk-topbar-spacer"></div>
+    <div class="spk-topbar-spacer">
+      <div class="spk-countdown" id="spkCountdown" aria-live="assertive" aria-atomic="true"></div>
+    </div>
   </div>
   <div class="spk-arena" id="spkArena">
     <div class="spk-diamond-grid">
@@ -777,10 +794,11 @@
   </div>
 </div>`;
 
-            const gameScreen = el.querySelector('.spk-game-screen');
-            const arenaEl    = el.querySelector('#spkArena');
-            const waterEl    = el.querySelector('#spkWater');
-            const fbEl       = el.querySelector('#spkFb');
+            const gameScreen  = el.querySelector('.spk-game-screen');
+            const arenaEl     = el.querySelector('#spkArena');
+            const waterEl     = el.querySelector('#spkWater');
+            const fbEl        = el.querySelector('#spkFb');
+            const countdownEl = el.querySelector('#spkCountdown');
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
                 finished = true;
@@ -858,14 +876,28 @@
                 if (remaining <= 0) {
                     finished = true;
                     waterEl.style.height = '100%';
+                    countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
                     saveAhBest(foundSet.size, totalOrders);
                     _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, false);
                     return;
                 }
 
                 waterEl.style.height = ((elapsed / durationMs) * 100).toFixed(1) + '%';
-                // Low-time cue: faster wave in the final 30 s (no numbers — water IS the clock).
                 waterEl.classList.toggle('spk-water-urgent', remaining < 30000);
+
+                // Red numeric countdown: visible only during the final 30 seconds.
+                if (remaining < 30000) {
+                    const remSec = Math.ceil(remaining / 1000);
+                    const mm = Math.floor(remSec / 60);
+                    const ss = remSec % 60;
+                    countdownEl.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
+                    countdownEl.classList.add('spk-countdown-visible');
+                    // Subtle blink in the final 10 seconds.
+                    countdownEl.classList.toggle('spk-countdown-pulse', remaining < 10000);
+                } else {
+                    countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
+                }
+
                 rafId = requestAnimationFrame(tick);
             }
         });
@@ -880,8 +912,8 @@
             showPaywallModal();
             return;
         }
-        // Record today as a trial day on actual entry (not on key icon visibility).
-        if (!isUnlocked()) addTrialDay(getLocalDayKey());
+        // Record trial day only when the paywall system is active.
+        if (HARD_MODE_PAYWALL_ENABLED && !isUnlocked()) addTrialDay(getLocalDayKey());
 
         const digits            = getTodayDigits();
         const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
@@ -1052,33 +1084,64 @@
         if (!container) return;
 
         const s = afterHoursStatus();
-        if (!s.unlocked && s.used === 0) { container.innerHTML = ''; return; }
 
-        const statusHTML = s.unlocked
-            ? 'After Hours: <strong>Unlocked \u2713</strong>'
-            : `After Hours: Preview (${s.used}/${s.max} days used)`;
-
-        container.innerHTML = `
+        // ── A: After Hours status (only shown when the paywall system is active) ──
+        let ahHTML = '';
+        if (HARD_MODE_PAYWALL_ENABLED && (s.unlocked || s.used > 0)) {
+            const statusLine = s.unlocked
+                ? 'After Hours: <strong>Unlocked \u2713</strong>'
+                : `After Hours: Preview (${s.used}/${s.max} days used)`;
+            ahHTML = `
 <div class="settings-section-title">After Hours</div>
 <div class="spk-settings-ah">
-  <p class="spk-settings-ah-status">${statusHTML}</p>
+  <p class="spk-settings-ah-status">${statusLine}</p>
   ${!s.unlocked ? `
   <div class="spk-settings-ah-btns">
     <button class="email-send-btn" id="spkSettingsSupportBtn">Support $${SUPPORT_PRICE_USD}</button>
     <button class="otp-verify-btn" id="spkSettingsCodeBtn">Enter code</button>
   </div>` : ''}
 </div>`;
+        }
 
-        if (!s.unlocked) {
-            container.querySelector('#spkSettingsSupportBtn').addEventListener('click', () => {
+        // ── B: Optional tip/support link ──
+        const supportHTML = (SUPPORT_ENABLED && SUPPORT_URL) ? `
+<div class="spk-settings-support-row">
+  <button class="email-send-btn spk-settings-support-btn">${SUPPORT_LABEL}</button>
+</div>` : '';
+
+        // ── C: Feedback — always available ──
+        const feedbackHTML = `
+<div class="settings-section-title">Feedback</div>
+<div class="spk-settings-feedback-row">
+  <button class="email-send-btn" id="spkFeedbackBtn">Send feedback</button>
+</div>`;
+
+        container.innerHTML = ahHTML + supportHTML + feedbackHTML;
+
+        // Wire paywall buttons (only when flag is active and user has a trial record)
+        if (HARD_MODE_PAYWALL_ENABLED && !s.unlocked && s.used > 0) {
+            container.querySelector('#spkSettingsSupportBtn')?.addEventListener('click', () => {
                 document.getElementById('settingsModal')?.classList.remove('show');
                 window.open(LEMONSQUEEZY_CHECKOUT_URL, '_blank', 'noopener');
             });
-            container.querySelector('#spkSettingsCodeBtn').addEventListener('click', () => {
+            container.querySelector('#spkSettingsCodeBtn')?.addEventListener('click', () => {
                 document.getElementById('settingsModal')?.classList.remove('show');
                 showLicenseEntryModal();
             });
         }
+
+        // Wire support button
+        if (SUPPORT_ENABLED && SUPPORT_URL) {
+            container.querySelector('.spk-settings-support-btn')?.addEventListener('click', () => {
+                window.open(SUPPORT_URL, '_blank', 'noopener');
+            });
+        }
+
+        // Wire feedback button (always)
+        container.querySelector('#spkFeedbackBtn').addEventListener('click', () => {
+            document.getElementById('settingsModal')?.classList.remove('show');
+            showFeedbackModal();
+        });
     }
 
     // ============================================================
@@ -1140,6 +1203,80 @@
             }
             location.reload();
         });
+    }
+
+    // ============================================================
+    // FEEDBACK MODAL  (Settings → "Send feedback")
+    // mailto: to FEEDBACK_EMAIL; Copy to clipboard as fallback.
+    // ============================================================
+    function showFeedbackModal() {
+        showOverlay((el) => {
+            el.classList.add('spk-overlay-center');
+            el.innerHTML = `
+<div class="spk-intro-card spk-feedback-card">
+  <div class="spk-intro-title">Send feedback</div>
+  <textarea class="spk-feedback-textarea" id="spkFeedbackText"
+            placeholder="What\u2019s confusing? Bugs? Ideas?" rows="5"></textarea>
+  <input class="spk-feedback-email" id="spkFeedbackEmail" type="email"
+         placeholder="Your email (optional, for a reply)" autocomplete="email">
+  <div class="spk-paywall-actions">
+    <button class="spk-btn spk-btn-primary spk-feedback-send">Send</button>
+    <button class="spk-btn spk-btn-ghost   spk-feedback-copy">Copy</button>
+    <button class="spk-btn spk-paywall-dismiss spk-feedback-close">Close</button>
+  </div>
+</div>`;
+
+            const textarea = el.querySelector('#spkFeedbackText');
+            const emailEl  = el.querySelector('#spkFeedbackEmail');
+            setTimeout(() => textarea.focus(), 80);
+
+            function buildBody() {
+                const msg   = textarea.value.trim();
+                const reply = emailEl.value.trim();
+                const day   = getLocalDayKey();
+                // Truncate UA to keep mailto within limits
+                const ua  = navigator.userAgent.slice(0, 120);
+                const res = `${screen.width}x${screen.height}@${window.devicePixelRatio}x`;
+                const parts = [msg];
+                if (reply) parts.push(`\nReply to: ${reply}`);
+                parts.push(`\n---\nDay: ${day}\nScreen: ${res}\nUA: ${ua}`);
+                return parts.join('\n');
+            }
+
+            el.querySelector('.spk-feedback-send').addEventListener('click', () => {
+                const body    = buildBody();
+                const subject = encodeURIComponent('Make24 feedback');
+                const enc     = encodeURIComponent(body);
+                window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${enc}`;
+            });
+
+            el.querySelector('.spk-feedback-copy').addEventListener('click', () => {
+                const text = buildBody();
+                if (navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(text).then(
+                        () => { if (window.showToast) window.showToast('Copied!'); },
+                        () => _fallbackCopy(text)
+                    );
+                } else {
+                    _fallbackCopy(text);
+                }
+            });
+
+            el.querySelector('.spk-feedback-close').addEventListener('click', hideOverlay);
+            el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+        });
+    }
+
+    function _fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value    = text;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        ta.remove();
+        if (window.showToast) window.showToast('Copied!');
     }
 
     // ============================================================
