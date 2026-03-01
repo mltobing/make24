@@ -690,6 +690,44 @@
     }
 
     // ============================================================
+    // PERFECT COMPLETION CELEBRATION
+    // ============================================================
+
+    // Staggered pulse-glow wave through every bubble in orderBook order.
+    function animatePerfectBubbles(screenEl, orderBook) {
+        orderBook.forEach((n, i) => {
+            const bubble = screenEl.querySelector(`.spk-bubble[data-order="${n}"]`);
+            if (!bubble) return;
+            // Remove and re-add the class so re-play restarts cleanly.
+            setTimeout(() => {
+                bubble.classList.remove('spk-bubble-celebrate');
+                void bubble.offsetWidth; // force reflow
+                bubble.classList.add('spk-bubble-celebrate');
+            }, i * 65);
+        });
+    }
+
+    // Reuse the app's #confetti container (z-index 1000, above the overlay at 600).
+    function _launchConfetti() {
+        const container = document.getElementById('confetti');
+        if (!container) return;
+        const colors = ['#22d3ee', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#fbbf24'];
+        for (let i = 0; i < 60; i++) {
+            const p = document.createElement('div');
+            p.className = 'confetti';
+            p.style.left            = (Math.random() * 100) + '%';
+            p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            p.style.animation       = `confetti-fall ${1.5 + Math.random()}s ease-out forwards`;
+            p.style.animationDelay  = (Math.random() * 0.6) + 's';
+            p.style.borderRadius    = Math.random() > 0.5 ? '50%' : '2px';
+            p.style.width           = (6 + Math.random() * 8) + 'px';
+            p.style.height          = (6 + Math.random() * 8) + 'px';
+            container.appendChild(p);
+        }
+        setTimeout(() => { container.innerHTML = ''; }, 3200);
+    }
+
+    // ============================================================
     // END SCREEN
     // ============================================================
     function _showAhEnd(screen, foundSet, orderBook, solutionsByTarget, digits, isComplete) {
@@ -710,13 +748,13 @@
         }).join('');
 
         screen.innerHTML = `
-<div class="spk-result">
-  <div class="spk-result-icon">${isComplete ? '✓' : '🌊'}</div>
-  <div class="spk-result-heading">${isComplete ? 'All orders filled!' : 'Time\u2019s up'}</div>
-  <div class="spk-result-stat">${found}/${total} &middot; ${pct}%</div>
-  ${isPB
+<div class="spk-result${isComplete ? ' spk-result-perfect' : ''}">
+  <div class="spk-result-icon">${isComplete ? '\u2B50' : '\uD83C\uDF0A'}</div>
+  <div class="spk-result-heading">${isComplete ? 'Perfect!' : 'Time\u2019s up'}</div>
+  <div class="spk-result-stat">${found}/${total}${isComplete ? '' : ' \u00B7 ' + pct + '%'}</div>
+  ${isPB && !isComplete
       ? '<div class="spk-result-new-pb">New best!</div>'
-      : (pb ? `<div class="spk-result-prev-pb">Best: ${pb.count}/${pb.total} (${pb.pct}%)</div>` : '')}
+      : (!isComplete && pb ? `<div class="spk-result-prev-pb">Best: ${pb.count}/${pb.total} (${pb.pct}%)</div>` : '')}
   ${found < total ? '<div class="spk-result-hint">Tap a missed order to see a solution.</div>' : ''}
   <div class="spk-result-book" id="spkResultBook">${chipsHTML}</div>
   <div class="spk-result-actions">
@@ -766,7 +804,6 @@
   <div class="spk-bubbles-container" id="spkBubbles">${bubblesHTML}</div>
   <div class="spk-topbar">
     <button class="spk-back-btn" aria-label="Exit After Hours">&#8249;</button>
-    <span class="spk-game-label">After Hours</span>
     <div class="spk-topbar-spacer">
       <div class="spk-countdown" id="spkCountdown" aria-live="assertive" aria-atomic="true"></div>
     </div>
@@ -841,8 +878,12 @@
                             if (foundSet.size === totalOrders) {
                                 finished = true;
                                 cancelAnimationFrame(rafId);
+                                countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
                                 saveAhBest(foundSet.size, totalOrders);
-                                setTimeout(() => _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, true), 700);
+                                // Celebrate: bubble wave + confetti, then show end screen.
+                                animatePerfectBubbles(el, orderBook);
+                                _launchConfetti();
+                                setTimeout(() => _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, true), 1800);
                                 return;
                             }
                         }
