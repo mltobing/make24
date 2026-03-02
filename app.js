@@ -12,18 +12,31 @@ document.body.addEventListener('touchmove', function(e) {
 // ============================================================
 // CONFIG
 // ============================================================
+// OBSERVABILITY
+// ============================================================
+/**
+ * Consistent error logging.  All caught exceptions should go through here
+ * so there is a single, grep-able call site.  Extend this function to ship
+ * errors to a remote service (e.g. a Supabase table or Sentry) when needed.
+ *
+ * @param {string} context  Short description of where the error occurred.
+ * @param {unknown} err     The caught error or value.
+ */
+function logError(context, err) {
+    console.error('[make24] ' + context + ':', err);
+}
+
+// ============================================================
 const APP_CONFIG = {
     publicUrl: 'https://make24.app/',
     shareLabel: 'make24.app'
 };
 
-// Supabase config
-const SUPABASE_URL = 'https://fimsbfcvavpehryvvcho.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpbXNiZmN2YXZwZWhyeXZ2Y2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUzOTEwMDMsImV4cCI6MjA3MDk2NzAwM30.6uAm_bDPN9aetYaKWA7zCvS8XDEVhmKKxA7RA7YK4JQ';
-
-// Supabase client (auth-aware)
-const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Supabase — client and credentials owned by supabase-service.js (loaded first).
+// Keep local aliases so the raw REST fetch calls below don't need to change.
+// In Node.js test environments make24Db is not defined; fall back to empty strings.
+const SUPABASE_URL = (typeof make24Db !== 'undefined') ? make24Db.url : '';
+const SUPABASE_KEY = (typeof make24Db !== 'undefined') ? make24Db.key : '';
 
 // ============================================================
 // NAMED CONSTANTS (replaces magic numbers)
@@ -468,7 +481,7 @@ async function updateSyncUI() {
     const syncStatus = document.getElementById('syncStatus');
     if (!syncSection) return;
 
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await make24Db.getSession();
     const email = session?.user?.email;
 
     if (email) {
@@ -498,13 +511,7 @@ async function signInWithGoogle() {
     status.textContent = 'Opening Google sign-in...';
     status.className = 'sync-status';
 
-    const { error } = await sb.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-            redirectTo: window.location.href,
-            queryParams: { prompt: 'select_account' }
-        }
-    });
+    const { error } = await make24Db.signInWithGoogle(window.location.href);
 
     if (error) {
         status.textContent = error.message;
@@ -531,12 +538,7 @@ async function sendOtpCode() {
     status.textContent = '';
     status.className = 'sync-status';
 
-    const { error } = await sb.auth.signInWithOtp({
-        email,
-        options: {
-            shouldCreateUser: true
-        }
-    });
+    const { error } = await make24Db.sendOtp(email);
 
     if (error) {
         status.textContent = error.message;
@@ -583,11 +585,7 @@ async function verifyOtpCode() {
     verifyBtn.disabled = true;
     verifyBtn.textContent = '...';
 
-    const { error } = await sb.auth.verifyOtp({
-        email: pendingOtpEmail,
-        token: code,
-        type: 'email'
-    });
+    const { error } = await make24Db.verifyOtp(pendingOtpEmail, code, 'email');
 
     verifyBtn.disabled = false;
     verifyBtn.textContent = 'Verify';
@@ -621,7 +619,7 @@ async function promptSignOut() {
 
     // Step 1: Best-effort global sign-out (invalidates token server-side)
     try {
-        const { error } = await sb.auth.signOut();
+        const { error } = await make24Db.signOut();
         if (error) {
             console.warn('[SYNC DEBUG] global signOut returned error:', JSON.stringify(error));
         } else {
@@ -636,7 +634,7 @@ async function promptSignOut() {
     // Step 2: Always force local sign-out (clears local session regardless of global result)
     let localCleared = false;
     try {
-        const { error } = await sb.auth.signOut({ scope: 'local' });
+        const { error } = await make24Db.signOut({ scope: 'local' });
         if (error) {
             console.warn('[SYNC DEBUG] local signOut returned error:', JSON.stringify(error));
         } else {
@@ -668,7 +666,7 @@ async function promptSignOut() {
 
 // Nudge: gentle toast at streak milestones
 async function maybeShowSyncNudge() {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await make24Db.getSession();
     if (session) return;
 
     const dismissed = localStorage.getItem(NUDGE_DISMISSED_KEY);
@@ -700,7 +698,7 @@ function nudgeOpenSignIn() {
 }
 
 async function getAuthHeaders() {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await make24Db.getSession();
     const token = session?.access_token || SUPABASE_KEY;
     return {
         'Content-Type': 'application/json',
@@ -730,7 +728,7 @@ function extractUuidFromRpcResult(payload) {
 }
 
 async function ensureCanonicalDeviceId() {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await make24Db.getSession();
     if (!session) {
         console.log('[SYNC DEBUG] ensureCanonicalDeviceId: no session, skipping');
         return;
@@ -738,7 +736,7 @@ async function ensureCanonicalDeviceId() {
     const localId = getDeviceId();
     console.log('[SYNC DEBUG] ensureCanonicalDeviceId CALLING get_or_set_device_id with localId:', localId, 'auth user:', session.user.id);
     try {
-        const { data, error } = await sb.rpc('get_or_set_device_id', { p_device_id: localId });
+        const { data, error } = await make24Db.rpc('get_or_set_device_id', { p_device_id: localId });
         console.log('[SYNC DEBUG] get_or_set_device_id RETURNED — data:', JSON.stringify(data), 'error:', JSON.stringify(error));
         if (error) {
             console.error('[SYNC DEBUG] get_or_set_device_id FAILED:', JSON.stringify(error));
@@ -812,7 +810,7 @@ async function registerDeviceFallback(userId, deviceId) {
 async function syncFromSupabase() {
     try {
         const headers = await getAuthHeaders();
-        const { data: { session } } = await sb.auth.getSession();
+        const { data: { session } } = await make24Db.getSession();
         console.log('[SYNC DEBUG] syncFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
         // Only sync with the server when the user is signed in.
@@ -899,14 +897,14 @@ async function syncFromSupabase() {
         updateStreakDisplay();
     } catch (e) {
         showSyncError('Could not reach server to sync streak.');
-        console.log('syncFromSupabase skipped:', e?.message || e);
+        logError('syncFromSupabase', e);
     }
 }
 
 async function syncHistoryFromSupabase() {
     try {
         const headers = await getAuthHeaders();
-        const { data: { session } } = await sb.auth.getSession();
+        const { data: { session } } = await make24Db.getSession();
         console.log('[SYNC DEBUG] syncHistoryFromSupabase START — gameState.deviceId:', gameState.deviceId, 'auth user:', session?.user?.id || 'none');
 
         // Only sync with the server when the user is signed in.
@@ -984,7 +982,7 @@ async function syncHistoryFromSupabase() {
         console.log(`[SYNC DEBUG] syncHistoryFromSupabase: server returned ${totalRows} solved puzzles, merged ${merged} new entries`);
     } catch (e) {
         showSyncError('Could not reach server to sync history.');
-        console.log('syncHistoryFromSupabase skipped:', e?.message || e);
+        logError('syncHistoryFromSupabase', e);
     }
 }
 
@@ -1018,7 +1016,7 @@ function buildBackfillRowsFromLocalHistory() {
 async function backfillLocalHistoryToSupabase() {
     const status = document.getElementById('syncStatus');
     try {
-        const { data: { session } } = await sb.auth.getSession();
+        const { data: { session } } = await make24Db.getSession();
         if (!session?.user?.id) return;
 
         const lastUserId = localStorage.getItem(LAST_USER_ID_KEY);
@@ -1039,7 +1037,7 @@ async function backfillLocalHistoryToSupabase() {
         const chunkSize = 200;
         for (let i = 0; i < rows.length; i += chunkSize) {
             const chunk = rows.slice(i, i + chunkSize);
-            const { error } = await sb.rpc('backfill_daily_results', {
+            const { error } = await make24Db.rpc('backfill_daily_results', {
                 p_device_id: gameState.deviceId,
                 p_rows: chunk
             });
@@ -1105,7 +1103,7 @@ function reconcileStreakFromHistory() {
 // ============================================================
 let bootComplete = false;
 
-sb.auth.onAuthStateChange(async (_event, session) => {
+make24Db.onAuthStateChange(async (_event, session) => {
     // During boot, boot() handles the full sync itself.
     // Only act on auth changes that happen AFTER boot (e.g. sign-in, sign-out).
     if (!bootComplete) return;
@@ -2204,7 +2202,7 @@ async function trackPlay(success) {
 
 async function syncStreakToSupabase() {
     try {
-        const { data: { session } } = await sb.auth.getSession();
+        const { data: { session } } = await make24Db.getSession();
         if (!session?.user?.id) return;
         const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_player_streak`, {
@@ -3187,7 +3185,7 @@ async function boot() {
 
     // Wait for the Supabase auth state to be fully resolved before rendering.
     // getSession() restores any persisted session from storage.
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await make24Db.getSession();
     await updateSyncUI();
 
     if (session) {

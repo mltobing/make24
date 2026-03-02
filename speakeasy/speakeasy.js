@@ -83,16 +83,16 @@
 
     function checkUrlParam() {
         try { return new URLSearchParams(window.location.search).get('speakeasy') === '1'; }
-        catch (_) { return false; }
+        catch (e) { console.error('[Speakeasy] checkUrlParam failed:', e); return false; }
     }
 
     async function refreshAuthState() {
         try {
-            if (window.sb) {
-                const { data: { session } } = await window.sb.auth.getSession();
+            if (window.make24Db) {
+                const { data: { session } } = await window.make24Db.getSession();
                 if (session) _registeredFromAuth = true;
             }
-        } catch (_) { /* auth unavailable */ }
+        } catch (e) { console.error('[Speakeasy] refreshAuthState failed:', e); }
     }
 
     // isUnlocked: true if permanently unlocked (Lemon Squeezy license OR legacy dev backdoors).
@@ -116,7 +116,7 @@
     // Returns Set<string> of distinct day keys used for trials.
     function getTrialDays() {
         try { return new Set(JSON.parse(localStorage.getItem(TRIAL_DAYS_KEY) || '[]')); }
-        catch (_) { return new Set(); }
+        catch (e) { console.error('[Speakeasy] getTrialDays parse failed:', e); return new Set(); }
     }
 
     // Record today as a used trial day (idempotent — Set deduplicates).
@@ -146,7 +146,7 @@
             const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
             const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : null;
             return today !== null && !!saved?.history?.[today]?.completed;
-        } catch (_) { return false; }
+        } catch (e) { console.error('[Speakeasy] isTodaySolved failed:', e); return false; }
     }
 
     window.make24DebugSetRegistered = function (val) {
@@ -357,7 +357,7 @@
                     return Math.floor((local - epoch) / 86400000) + 1;
                 })();
             return window.generatePuzzle ? window.generatePuzzle(pNum) : [2, 3, 4, 4];
-        } catch (_) { return [2, 3, 4, 4]; }
+        } catch (e) { console.error('[Speakeasy] getDigitsForPuzzle failed:', e); return [2, 3, 4, 4]; }
     }
 
     // ============================================================
@@ -1098,7 +1098,8 @@
                         status.classList.add('spk-status-err');
                         submit.disabled = false;
                     }
-                } catch (_) {
+                } catch (e) {
+                    console.error('[Speakeasy] license validation failed:', e);
                     status.textContent = 'Network error \u2014 check your connection.';
                     status.classList.add('spk-status-err');
                     submit.disabled = false;
@@ -1220,7 +1221,7 @@
                     { completed: true }
                 );
                 localStorage.setItem('make24_v5', JSON.stringify(saved));
-            } catch (_) {}
+            } catch (e) { console.error('[Speakeasy] dev solve inject failed:', e); }
             location.reload();
         });
         panel.querySelector('#devTrialReset').addEventListener('click', () => {
