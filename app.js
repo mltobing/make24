@@ -2232,7 +2232,8 @@ async function trackPlay(success) {
             p_moves: playState.moves,
             p_solve_time: solveTime,
             p_operators: playState.operatorHistory,
-            p_undos: playState.undoCount
+            p_undos: playState.undoCount,
+            p_is_speakeasy: currentPuzzle.isSpeakeasy === true
         };
 
         const headers = await getAuthHeaders();
