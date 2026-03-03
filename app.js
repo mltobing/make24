@@ -300,6 +300,12 @@ function useHint() {
         document.getElementById('hintDisplay').classList.add('visible');
         document.getElementById('hintBtn').classList.remove('visible');
         clearHintTimer();
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'hint_used', {
+                puzzle_num: currentPuzzle.puzzleNum,
+                is_speakeasy: currentPuzzle.isSpeakeasy === true
+            });
+        }
     }
 }
 
@@ -1423,6 +1429,17 @@ function clearWinState() {
 }
 
 function initPuzzle(puzzleNum, isArchive = false) {
+    if (playState.moves > 0 && !playState.completed) {
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'puzzle_abandoned', {
+                puzzle_num: currentPuzzle.puzzleNum,
+                is_archive: currentPuzzle.isArchive === true,
+                is_speakeasy: currentPuzzle.isSpeakeasy === true,
+                moves_attempted: playState.moves
+            });
+        }
+    }
+
     hideVictoryCard();
     hideOperators();
     clearHintTimer();
@@ -1879,6 +1896,17 @@ async function handleWin() {
     const percentileData = await trackPlay(true);
     displayPercentile(percentileData);
 
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'puzzle_solved', {
+            puzzle_num: currentPuzzle.puzzleNum,
+            is_perfect: isPerfect,
+            is_archive: currentPuzzle.isArchive === true,
+            is_speakeasy: currentPuzzle.isSpeakeasy === true,
+            moves: playState.moves,
+            solve_time: solveTime
+        });
+    }
+
     // Gentle nudge at streak milestones (if not signed in)
     maybeShowSyncNudge();
 }
@@ -1964,6 +1992,12 @@ function generateShareText() {
 }
 
 function share() {
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'result_shared', {
+            puzzle_num: currentPuzzle.puzzleNum,
+            is_perfect: (playState.moves === PERFECT_MOVES && playState.undoCount === 0)
+        });
+    }
     const text = generateShareText();
     if (navigator.share) {
         navigator.share({ text }).catch(() => copyToClipboard(text));
