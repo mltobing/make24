@@ -1846,6 +1846,8 @@ async function handleWin() {
     if (!currentPuzzle.isArchive) {
         incrementStreak();
         syncStreakToSupabase();
+    } else {
+        trackArchivePlay(true);
     }
 
     saveState();
@@ -2159,6 +2161,29 @@ function renderCalendar() {
 
 // Supabase tracking
 let lastPercentileData = null;
+
+async function trackArchivePlay(success) {
+    if (!currentPuzzle.isArchive) return;
+    try {
+        const solveTime = playState.startTime
+            ? Math.round((playState.endTime - playState.startTime) / 1000)
+            : 0;
+        const headers = await getAuthHeaders();
+        await fetch(`${SUPABASE_URL}/rest/v1/archive_plays`, {
+            method: 'POST',
+            headers: { ...headers, 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+                device_id: gameState.deviceId,
+                puzzle_num: currentPuzzle.puzzleNum,
+                solved: success,
+                solve_time_seconds: solveTime
+            })
+        });
+    } catch (e) {
+        // Fire-and-forget — never block the game on analytics
+        console.warn('[make24] trackArchivePlay failed silently:', e);
+    }
+}
 
 async function trackPlay(success) {
     if (currentPuzzle.isArchive) return null;
