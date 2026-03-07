@@ -823,7 +823,6 @@
   <div class="spk-timer-bar-track">
     <div class="spk-timer-bar-fill" id="spkTimerFill"></div>
   </div>
-  <div class="spk-chips-row" id="spkChips"></div>
   <div class="spk-arena" id="spkArena">
     <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
@@ -844,6 +843,7 @@
       </div>
     </div>
   </div>
+  <div class="spk-chips-row" id="spkChips"></div>
 </div>`;
 
             const gameScreen  = el.querySelector('.spk-game-screen');
@@ -1429,28 +1429,10 @@
     }
 
     // ============================================================
-    // KEY INJECTION + "TRY SPEAKEASY" BUTTON
+    // KEY INJECTION + "HARD MODE" BUTTON
     // ============================================================
 
-    // Placement B: top-right of the victory card
-    function injectKeyIntoVictoryCard() {
-        if (!isTodaySolved()) return;
-        const card = document.getElementById('victoryCard');
-        if (!card) return;
-        const old = document.getElementById('spkKeyBtn');
-        if (old) old.remove();
-
-        const btn = document.createElement('button');
-        btn.id        = 'spkKeyBtn';
-        btn.className = 'spk-key-btn';
-        btn.setAttribute('aria-label', 'Hard Mode');
-        btn.setAttribute('title', 'Hard Mode');
-        btn.textContent = '\uD83D\uDD11';
-        btn.addEventListener('click', (e) => { e.stopPropagation(); launchAfterHours(); });
-        card.appendChild(btn);
-    }
-
-    // "Try Speakeasy →" button injected into victory actions
+    // "🔑 Hard Mode" button injected into victory actions
     function injectTrySpeakeasyButton() {
         if (!isTodaySolved()) return;
         const actionsEl = document.querySelector('.victory-actions');
@@ -1496,14 +1478,11 @@
             const visible = backdrop.classList.contains('show');
             if (visible && !wasVisible) {
                 wasVisible = true;
-                injectKeyIntoVictoryCard();
                 injectTrySpeakeasyButton();
                 injectTopbarKey();
             }
             if (!visible && wasVisible) {
                 wasVisible = false;
-                const k = document.getElementById('spkKeyBtn');
-                if (k) k.remove();
                 const t = document.getElementById('spkTryBtn');
                 if (t) t.remove();
             }
