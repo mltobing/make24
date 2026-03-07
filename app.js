@@ -1270,21 +1270,24 @@ function shareHistoryGrid() {
 // ============================================================
 // CHALLENGE A FRIEND
 // ============================================================
-function shareChallenge() {
-    const puzzleNum = currentPuzzle.puzzleNum;
-    const history = gameState.history[puzzleNum];
-    const moves = history?.moves || playState.moves;
-    const isPerfect = history?.completed && history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
+// Returns the nearest puzzle before fromPuzzleNum that the user hasn't solved yet,
+// or null if every earlier puzzle has been solved.
+function getNearestEarlierUnsolvedPuzzle(fromPuzzleNum) {
+    for (let num = fromPuzzleNum - 1; num >= 1; num--) {
+        if (!gameState.history[num]?.completed) return num;
+    }
+    return null;
+}
 
-    let text = `\u2694\uFE0F Can you beat my Make 24?\n`;
-    text += formatPuzzleDateLong(puzzleNum);
-    if (isPerfect) text += ` \u2014 I got \u2B50 Perfect`;
-    else text += ` \u2014 I solved it in ${moves} moves`;
-    text += `\n\n${APP_CONFIG.publicUrl}`;
-
-    if (navigator.share) {
-        navigator.share({ text }).catch(() => copyToClipboard(text));
-    } else { copyToClipboard(text); }
+function playAnother() {
+    const next = getNearestEarlierUnsolvedPuzzle(currentPuzzle.puzzleNum);
+    hideVictoryCard();
+    if (next !== null) {
+        initPuzzle(next, next !== getTodayPuzzleNumber());
+    } else {
+        // All earlier puzzles solved — fall back to the history picker
+        showArchive();
+    }
 }
 
 // ============================================================
@@ -1547,6 +1550,9 @@ function showVictoryCard(opts) {
     const pEl = document.getElementById('victoryPercentile');
     pEl.textContent = percentileText || '';
     pEl.className = 'victory-percentile';
+    // Footer only shown for today's puzzle, not archive replays
+    const footerEl = document.getElementById('victoryFooter');
+    if (footerEl) footerEl.style.display = currentPuzzle.isArchive ? 'none' : '';
     document.getElementById('victoryBackdrop').classList.add('show');
 }
 
@@ -3004,7 +3010,7 @@ document.getElementById('closeArchive').addEventListener('click', () => {
 });
 
 document.getElementById('shareBtn').addEventListener('click', share);
-document.getElementById('challengeBtn').addEventListener('click', shareChallenge);
+document.getElementById('playAnotherBtn').addEventListener('click', playAnother);
 document.getElementById('shareHistoryBtn').addEventListener('click', shareHistoryGrid);
 
 // Tap the big green "24" to replay the solution
