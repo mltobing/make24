@@ -14,7 +14,8 @@
  *   - Timer bar (4px) shows remaining time: cyan→gold→pulsing red.
  *   - Solved chips row shows progress through the sequence.
  *   - End screen shows all targets with found/missed chips.
- *   - One attempt per day; mid-game state saved to localStorage for resume.
+ *   - Mid-game state saved to localStorage for resume if player exits early.
+ *   - Uses window.currentPuzzle (from app.js) to support archive puzzle play.
  *
  * ─── TUNE THESE CONSTANTS ────────────────────────────────────────────
  *   ORDER_MIN           = 1    smallest integer that counts as a target
@@ -24,7 +25,6 @@
  *
  * Storage keys (never collide with base-game keys):
  *   make24_speakeasy_state       — JSON of in-progress game state
- *   make24_speakeasy_today       — puzzle number of last completed/abandoned game
  *   make24_afterhours_introSeen  — "1" once intro has been shown
  *
  * Solution plans are represented as expression trees:
@@ -48,7 +48,6 @@
     const STEP_MS             = 700;  // ms between highlight and apply in demo animation
 
     const STATE_KEY   = 'make24_speakeasy_state';
-    const TODAY_KEY   = 'make24_speakeasy_today';
     const INTRO_KEY   = 'make24_afterhours_introSeen';
     const SLOT_CLASSES = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
 
@@ -126,9 +125,12 @@
 
     function isTodaySolved() {
         try {
-            const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
-            const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : null;
-            return today !== null && !!saved?.history?.[today]?.completed;
+            const saved   = JSON.parse(localStorage.getItem('make24_v5') || '{}');
+            // Check active puzzle first (supports archive), fall back to today
+            const active  = (window.currentPuzzle && window.currentPuzzle.puzzleNum > 0)
+                ? window.currentPuzzle.puzzleNum
+                : (window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : null);
+            return active !== null && !!saved?.history?.[active]?.completed;
         } catch (e) { console.error('[Speakeasy] isTodaySolved failed:', e); return false; }
     }
 
@@ -515,15 +517,6 @@
         localStorage.removeItem(STATE_KEY);
     }
 
-    function markTodayPlayed(puzzleNum) {
-        localStorage.setItem(TODAY_KEY, String(puzzleNum));
-    }
-
-    function hasTodayBeenPlayed() {
-        const played = localStorage.getItem(TODAY_KEY);
-        return played === String(getTodayPuzzleNum());
-    }
-
     // ============================================================
     // SUPABASE SYNC
     // ============================================================
@@ -565,7 +558,7 @@
             el.innerHTML = `
 <div class="spk-intro-card">
   <div class="spk-intro-icon">\uD83C\uDF78</div>
-  <div class="spk-intro-title">Speakeasy</div>
+  <div class="spk-intro-title">Hard Mode</div>
   <div class="spk-intro-body">Make every number from 1\u2013${ORDER_MAX}, one at a time. ${SECONDS_PER_TARGET}s per target.</div>
   <div class="spk-intro-tag">${totalTargets} targets today</div>
   <button class="spk-btn spk-btn-primary spk-intro-start">Let's go</button>
@@ -723,7 +716,7 @@
 
         screen.innerHTML = `
 <div class="spk-result${isPerfect ? ' spk-result-perfect' : ''}">
-  <div class="spk-result-icon">${isPerfect ? '\u2B50' : '\u23F0'}</div>
+  <div class="spk-result-icon">${isPerfect ? '\u2B50' : '\u23F1'}</div>
   <div class="spk-result-heading">${isPerfect ? 'Perfect!' : 'Time\u2019s up'}</div>
   <div class="spk-result-stat">${solved}/${total}</div>
   ${!isPerfect && solved > 0 ? '<div class="spk-result-hint">Tap a missed target to see a solution.</div>' : ''}
@@ -744,7 +737,7 @@
         });
 
         screen.querySelector('#spkShareBtn').addEventListener('click', () => {
-            shareText(`Speakeasy #${puzzleNum}\n${shareEmoji}\n${solved}/${total} targets`);
+            shareText(`Hard Mode #${puzzleNum}\n${shareEmoji}\n${solved}/${total} targets`);
             if (typeof gtag !== 'undefined') {
                 gtag('event', 'result_shared', {
                     puzzle_num: puzzleNum,
@@ -800,7 +793,6 @@
             // All done already (edge case from resume)
             finished = true;
             clearGameState();
-            markTodayPlayed(puzzleNum);
             showOverlay((el) => {
                 el.innerHTML = '<div class="spk-game-screen"></div>';
                 const screen = el.querySelector('.spk-game-screen');
@@ -817,8 +809,8 @@
             el.innerHTML = `
 <div class="spk-game-screen">
   <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Exit Speakeasy">&#8249;</button>
-    <span class="spk-badge">SPEAKEASY</span>
+    <button class="spk-back-btn" aria-label="Exit Hard Mode">&#8249;</button>
+    <span class="spk-badge">HARD MODE</span>
     <div class="spk-topbar-right">
       <span class="spk-stars" id="spkStars">${starsStr}</span>
       <span class="spk-topbar-progress" id="spkProgress">${solvedSet.size}/${totalTargets}</span>
@@ -906,8 +898,9 @@
                 totalElapsedBefore += (Date.now() - timerStart);
                 timerStart = Date.now();
 
-                // Reset board
-                round = createRound([...digits]);
+                // Reset board — must update both _round and round
+                _round = createRound([...digits]);
+                round  = _round;
                 renderBoard(el, round);
             }
 
@@ -916,7 +909,6 @@
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
                 clearGameState();
-                markTodayPlayed(puzzleNum);
 
                 const totalElapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
                 const totalTimeSec = Math.round(totalElapsed / 1000);
@@ -1074,21 +1066,28 @@
         }
         if (HARD_MODE_PAYWALL_ENABLED && !isUnlocked()) addTrialDay(getLocalDayKey());
 
-        const puzzleNum         = getTodayPuzzleNum();
-        const digits            = getTodayDigits();
+        // Use the currently-active puzzle when available (supports archive play).
+        // window.currentPuzzle is the module-level variable in app.js.
+        const activePuzzle = (window.currentPuzzle && window.currentPuzzle.puzzleNum > 0)
+            ? window.currentPuzzle : null;
+        const puzzleNum = activePuzzle ? activePuzzle.puzzleNum : getTodayPuzzleNum();
+        const digits    = (activePuzzle && activePuzzle.numbers && activePuzzle.numbers.length === 4)
+            ? [...activePuzzle.numbers]
+            : getTodayDigits();
+
         const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
         const difficultyCounts  = computeDifficulty(digits, ORDER_MIN, ORDER_MAX);
         const allTargets        = [...solutionsByTarget.keys()];
         const targetsList       = sortByDifficulty(allTargets, difficultyCounts);
 
-        console.log(`[Speakeasy] digits: ${digits.join(',')} \u2192 ${targetsList.length} targets in [${ORDER_MIN}..${ORDER_MAX}]:`, targetsList);
+        console.log(`[HardMode] puzzle #${puzzleNum} digits: ${digits.join(',')} \u2192 ${targetsList.length} targets in [${ORDER_MIN}..${ORDER_MAX}]:`, targetsList);
 
         if (targetsList.length === 0) {
             showOverlay((el) => {
                 el.classList.add('spk-overlay-center');
                 el.innerHTML = `
 <div class="spk-intro-card">
-  <div class="spk-intro-title">No targets today</div>
+  <div class="spk-intro-title">No targets</div>
   <div class="spk-intro-body">No achievable targets for today\u2019s digits.</div>
   <button class="spk-btn spk-btn-ghost spk-intro-close">Close</button>
 </div>`;
@@ -1098,28 +1097,10 @@
             return;
         }
 
-        // Check for resumable state
+        // Check for resumable in-progress state for this specific puzzle
         const saved = loadGameState();
         if (saved && saved.puzzleNum === puzzleNum) {
-            // Resume from saved state
             startSequenceRun(digits, saved.targetsList, solutionsByTarget, difficultyCounts, puzzleNum, saved);
-            return;
-        }
-
-        // Check if already played today
-        if (hasTodayBeenPlayed()) {
-            showOverlay((el) => {
-                el.classList.add('spk-overlay-center');
-                el.innerHTML = `
-<div class="spk-intro-card">
-  <div class="spk-intro-icon">\u2705</div>
-  <div class="spk-intro-title">Done for today</div>
-  <div class="spk-intro-body">You\u2019ve already played Speakeasy today. Come back tomorrow!</div>
-  <button class="spk-btn spk-btn-ghost spk-intro-close">Close</button>
-</div>`;
-                el.querySelector('.spk-intro-close').addEventListener('click', hideOverlay);
-                el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
-            });
             return;
         }
 
@@ -1169,8 +1150,8 @@
             el.innerHTML = `
 <div class="spk-intro-card">
   <div class="spk-intro-icon">\uD83D\uDD11</div>
-  <div class="spk-intro-title">Speakeasy</div>
-  <div class="spk-intro-body">You\u2019ve had a ${status.max}-day preview. Support Make24 to keep Speakeasy.</div>
+  <div class="spk-intro-title">Hard Mode</div>
+  <div class="spk-intro-body">You\u2019ve had a ${status.max}-day preview. Support Make24 to keep Hard Mode.</div>
   <div class="spk-paywall-actions">
     <button class="spk-btn spk-btn-primary spk-paywall-support">Support $${SUPPORT_PRICE_USD}</button>
     <button class="spk-btn spk-btn-ghost   spk-paywall-code">Enter code</button>
@@ -1264,10 +1245,10 @@
         let ahHTML = '';
         if (HARD_MODE_PAYWALL_ENABLED && (s.unlocked || s.used > 0)) {
             const statusLine = s.unlocked
-                ? 'Speakeasy: <strong>Unlocked \u2713</strong>'
-                : `Speakeasy: Preview (${s.used}/${s.max} days used)`;
+                ? 'Hard Mode: <strong>Unlocked \u2713</strong>'
+                : `Hard Mode: Preview (${s.used}/${s.max} days used)`;
             ahHTML = `
-<div class="settings-section-title">Speakeasy</div>
+<div class="settings-section-title">Hard Mode</div>
 <div class="spk-settings-ah">
   <p class="spk-settings-ah-status">${statusLine}</p>
   ${!s.unlocked ? `
@@ -1325,7 +1306,7 @@
         panel.id        = 'spkDevPanel';
         panel.className = 'spk-dev-panel';
         panel.innerHTML = `
-<div class="spk-dev-title">\u2699 Speakeasy Dev</div>
+<div class="spk-dev-title">\u2699 Hard Mode Dev</div>
 <button id="devSolve">Simulate daily solve</button>
 <button id="devTrialReset">Reset trial (0 days)</button>
 <button id="devTrialFull">Exhaust trial (3 days)</button>
@@ -1371,7 +1352,6 @@
         });
         panel.querySelector('#devResetSpeakeasy').addEventListener('click', () => {
             localStorage.removeItem(STATE_KEY);
-            localStorage.removeItem(TODAY_KEY);
             location.reload();
         });
     }
@@ -1463,8 +1443,8 @@
         const btn = document.createElement('button');
         btn.id        = 'spkKeyBtn';
         btn.className = 'spk-key-btn';
-        btn.setAttribute('aria-label', 'Speakeasy');
-        btn.setAttribute('title', 'Speakeasy');
+        btn.setAttribute('aria-label', 'Hard Mode');
+        btn.setAttribute('title', 'Hard Mode');
         btn.textContent = '\uD83D\uDD11';
         btn.addEventListener('click', (e) => { e.stopPropagation(); launchAfterHours(); });
         card.appendChild(btn);
@@ -1480,7 +1460,7 @@
         const btn = document.createElement('button');
         btn.id        = 'spkTryBtn';
         btn.className = 'spk-try-btn';
-        btn.textContent = 'Try Speakeasy \u2192';
+        btn.textContent = '\uD83D\uDD11 Hard Mode';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             launchAfterHours();
@@ -1498,8 +1478,8 @@
         const btn = document.createElement('button');
         btn.id        = 'spkTopbarKeyBtn';
         btn.className = 'spk-key-topbar';
-        btn.setAttribute('aria-label', 'Speakeasy');
-        btn.setAttribute('title', 'Speakeasy');
+        btn.setAttribute('aria-label', 'Hard Mode');
+        btn.setAttribute('title', 'Hard Mode');
         btn.textContent = '\uD83D\uDD11';
         btn.addEventListener('click', launchAfterHours);
         streakEl.insertAdjacentElement('afterend', btn);
