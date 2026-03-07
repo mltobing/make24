@@ -1,36 +1,36 @@
 /**
- * speakeasy.js — "After Hours" order-book mode for Make24
+ * speakeasy.js — "After Hours" sequence-run mode for Make24
  *
  * Gated behind isRegistered(). Zero modifications to app.js or style.css.
- * A MutationObserver watches the victory card to inject the 🔑 entry point.
+ * A MutationObserver watches the victory card to inject:
+ *   1. 🔑 key button (top-right of victory card + header topbar)
+ *   2. "Try Speakeasy →" button (below Share/Challenge in victory actions)
  *
- * Tapping 🔑 launches After Hours directly (no intermediate selection screen).
- * A one-time intro overlay is shown the first time (INTRO_KEY in localStorage).
- *
- * After Hours:
+ * Sequence-Run Mode:
  *   - Pre-computes all integers in [ORDER_MIN..ORDER_MAX] achievable from
  *     today's 4 digits using exact rational arithmetic (+−×÷, all digits once).
- *   - Stores one solution expression tree per reachable target.
- *   - Player fills orders on the diamond board; orders appear as bubbles in a
- *     ring around the arena — not a bottom lump.
- *   - Rising water IS the timer (durationMs = |orderBook| × SECONDS_PER_ORDER × 1000).
- *   - End screen: missed orders are tappable → modal shows expression + Watch animation.
+ *   - Sorts targets by difficulty (hardest last).
+ *   - Presents one target at a time with a SECONDS_PER_TARGET countdown.
+ *   - Timer bar (4px) shows remaining time: cyan→gold→pulsing red.
+ *   - Solved chips row shows progress through the sequence.
+ *   - End screen shows all targets with found/missed chips.
+ *   - One attempt per day; mid-game state saved to localStorage for resume.
  *
  * ─── TUNE THESE CONSTANTS ────────────────────────────────────────────
- *   ORDER_MIN         = 1    smallest integer that counts as an order
- *   ORDER_MAX         = 24   largest  integer that counts as an order
- *   SECONDS_PER_ORDER = 30   seconds of play-time granted per reachable order
+ *   ORDER_MIN           = 1    smallest integer that counts as a target
+ *   ORDER_MAX           = 24   largest  integer that counts as a target
+ *   SECONDS_PER_TARGET  = 40   seconds per target
  * ─────────────────────────────────────────────────────────────────────
  *
  * Storage keys (never collide with base-game keys):
- *   make24_afterhours_best      — JSON { count, total, pct }
- *   make24_afterhours_introSeen — "1" once intro has been shown
+ *   make24_speakeasy_state       — JSON of in-progress game state
+ *   make24_speakeasy_today       — puzzle number of last completed/abandoned game
+ *   make24_afterhours_introSeen  — "1" once intro has been shown
  *
  * Solution plans are represented as expression trees:
  *   ExprNode = { type:'leaf', id:number, value:number }
  *            | { type:'op', op:string, left:ExprNode, right:ExprNode, r:Rat }
  *   Where Rat = { n:number, d:number } (reduced fraction, d > 0).
- *   solutionsByTarget: Map<number, ExprNode>  (one tree per reachable integer)
  *
  * Console debug helper:
  *   window.make24DebugSetRegistered(true/false)
@@ -41,38 +41,32 @@
     // ============================================================
     // CONSTANTS — tune here
     // ============================================================
-    const ORDER_MIN         = 1;
-    const ORDER_MAX         = 24;
-    const SECONDS_PER_ORDER = 30;   // seconds per reachable order
-    const RESET_MS          = 600;  // delay before board resets after expression resolves
-    const STEP_MS           = 700;  // ms between highlight and apply in demo animation
+    const ORDER_MIN           = 1;
+    const ORDER_MAX           = 24;
+    const SECONDS_PER_TARGET  = 40;   // seconds per target
+    const RESET_MS            = 600;  // delay before board resets after expression resolves
+    const STEP_MS             = 700;  // ms between highlight and apply in demo animation
 
-    const AH_BEST_KEY  = 'make24_afterhours_best';
-    const INTRO_KEY    = 'make24_afterhours_introSeen';
+    const STATE_KEY   = 'make24_speakeasy_state';
+    const TODAY_KEY   = 'make24_speakeasy_today';
+    const INTRO_KEY   = 'make24_afterhours_introSeen';
     const SLOT_CLASSES = ['spk-slot-top', 'spk-slot-left', 'spk-slot-right', 'spk-slot-bottom'];
 
     // ── ACCESS MODEL ─────────────────────────────────────────────────
-    const TRIAL_DAYS_MAX            = 3;   // free preview days before paywall
+    const TRIAL_DAYS_MAX            = 3;
     const SUPPORT_PRICE_USD         = 10;
-    // ↓ Replace before shipping to production:
-    const LEMONSQUEEZY_CHECKOUT_URL = 'REPLACE_ME'; // live checkout URL from LS dashboard
-    const LEMONSQUEEZY_PRODUCT_ID   = 0;            // REPLACE_ME: numeric product_id from LS meta
+    const LEMONSQUEEZY_CHECKOUT_URL = 'REPLACE_ME';
+    const LEMONSQUEEZY_PRODUCT_ID   = 0;
 
-    const TRIAL_DAYS_KEY  = 'make24_afterhours_trial_days';  // JSON string[] of YYYY-MM-DD
-    const UNLOCKED_KEY    = 'make24_afterhours_unlocked';    // "1" when permanently unlocked
-    const LICENSE_KEY_KEY = 'make24_afterhours_license_key'; // stored license key (full string)
+    const TRIAL_DAYS_KEY  = 'make24_afterhours_trial_days';
+    const UNLOCKED_KEY    = 'make24_afterhours_unlocked';
+    const LICENSE_KEY_KEY = 'make24_afterhours_license_key';
 
     // ── FEATURE FLAGS ─────────────────────────────────────────────────
-    // Set HARD_MODE_PAYWALL_ENABLED = true to re-enable the trial + Lemon Squeezy unlock flow.
-    // When false (default), Hard Mode is always free once the daily puzzle is solved.
     const HARD_MODE_PAYWALL_ENABLED = false;
-
-    // Optional tip-jar link shown in Settings. Off by default.
-    // To enable: set SUPPORT_ENABLED = true and fill in SUPPORT_URL.
     const SUPPORT_ENABLED = false;
-    const SUPPORT_URL     = '';   // e.g. 'https://ko-fi.com/yourname'
+    const SUPPORT_URL     = '';
     const SUPPORT_LABEL   = 'Support';
-
     const FEEDBACK_EMAIL  = 'martin@kapework.com';
 
     // ============================================================
@@ -95,31 +89,24 @@
         } catch (e) { console.error('[Speakeasy] refreshAuthState failed:', e); }
     }
 
-    // isUnlocked: true if permanently unlocked (Lemon Squeezy license OR legacy dev backdoors).
-    // This is used for access decisions; the key icon visibility uses isTodaySolved() only.
     function isUnlocked() {
-        // Dev backdoors: URL param or legacy make24_registered key (backward compat)
         if (checkUrlParam()) return true;
         if (localStorage.getItem('make24_registered') === '1') return true;
         if (_registeredFromAuth) return true;
-        // Production: Lemon Squeezy unlock
         return localStorage.getItem(UNLOCKED_KEY) === '1';
     }
 
     // ── TRIAL HELPERS ────────────────────────────────────────────────
-    // Returns the local calendar date as YYYY-MM-DD (used as a day key).
     function getLocalDayKey() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // Returns Set<string> of distinct day keys used for trials.
     function getTrialDays() {
         try { return new Set(JSON.parse(localStorage.getItem(TRIAL_DAYS_KEY) || '[]')); }
         catch (e) { console.error('[Speakeasy] getTrialDays parse failed:', e); return new Set(); }
     }
 
-    // Record today as a used trial day (idempotent — Set deduplicates).
     function addTrialDay(dayKey) {
         const days = getTrialDays();
         days.add(dayKey);
@@ -128,25 +115,29 @@
 
     function trialUsedCount() { return getTrialDays().size; }
 
-    // True if user can enter After Hours right now.
-    // When HARD_MODE_PAYWALL_ENABLED is false, always returns true (free post-solve).
     function canEnterAfterHoursToday() {
         if (!HARD_MODE_PAYWALL_ENABLED) return true;
         return isUnlocked() || trialUsedCount() < TRIAL_DAYS_MAX;
     }
 
-    // Returns status object consumed by settings UI and paywall copy.
     function afterHoursStatus() {
         return { unlocked: isUnlocked(), used: trialUsedCount(), max: TRIAL_DAYS_MAX };
     }
 
-    // Returns true when today's daily puzzle is already solved (reads app.js's localStorage key).
     function isTodaySolved() {
         try {
             const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
             const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : null;
             return today !== null && !!saved?.history?.[today]?.completed;
         } catch (e) { console.error('[Speakeasy] isTodaySolved failed:', e); return false; }
+    }
+
+    function getTodayPuzzleNum() {
+        if (window.getTodayPuzzleNumber) return window.getTodayPuzzleNumber();
+        const epoch = new Date('2025-01-01T00:00:00Z');
+        const now   = new Date();
+        const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        return Math.floor((local - epoch) / 86400000) + 1;
     }
 
     window.make24DebugSetRegistered = function (val) {
@@ -162,24 +153,7 @@
     };
 
     // ============================================================
-    // STORAGE
-    // ============================================================
-    function getAhBest() {
-        const v = localStorage.getItem(AH_BEST_KEY);
-        return v ? JSON.parse(v) : null;
-    }
-
-    function saveAhBest(count, total) {
-        const pct = Math.round(100 * count / total);
-        const cur = getAhBest();
-        if (!cur || count > cur.count || (count === cur.count && pct > cur.pct)) {
-            localStorage.setItem(AH_BEST_KEY, JSON.stringify({ count, total, pct }));
-        }
-    }
-
-    // ============================================================
     // RATIONAL ARITHMETIC
-    // Represents numbers as { n, d } (reduced, d > 0).
     // ============================================================
     function gcd(a, b) {
         a = Math.abs(a); b = Math.abs(b);
@@ -196,9 +170,6 @@
 
     // ============================================================
     // SOLVER WITH EXPRESSION TREES
-    //
-    // Each element in the recursive array is { r:Rat, tree:ExprNode }.
-    // allResults() enumerates every achievable value from a list of nodes.
     // ============================================================
     function allResults(nodes) {
         if (nodes.length === 1) return [nodes[0]];
@@ -216,19 +187,17 @@
                     }
                 };
 
-                push('+', rat(ar.n * br.d + br.n * ar.d, ar.d * br.d), a, b);           // a + b
-                push('-', rat(ar.n * br.d - br.n * ar.d, ar.d * br.d), a, b);           // a - b
-                push('-', rat(br.n * ar.d - ar.n * br.d, br.d * ar.d), b, a);           // b - a  (left=b)
-                push('*', rat(ar.n * br.n, ar.d * br.d), a, b);                         // a * b
-                if (br.n !== 0) push('/', rat(ar.n * br.d, ar.d * br.n), a, b);         // a / b
-                if (ar.n !== 0) push('/', rat(br.n * ar.d, br.d * ar.n), b, a);         // b / a  (left=b)
+                push('+', rat(ar.n * br.d + br.n * ar.d, ar.d * br.d), a, b);
+                push('-', rat(ar.n * br.d - br.n * ar.d, ar.d * br.d), a, b);
+                push('-', rat(br.n * ar.d - ar.n * br.d, br.d * ar.d), b, a);
+                push('*', rat(ar.n * br.n, ar.d * br.d), a, b);
+                if (br.n !== 0) push('/', rat(ar.n * br.d, ar.d * br.n), a, b);
+                if (ar.n !== 0) push('/', rat(br.n * ar.d, br.d * ar.n), b, a);
             }
         }
         return out;
     }
 
-    // Returns Map<integer, ExprNode> for all reachable integers in [min..max].
-    // Memoised by sorted digit key so computation runs once per unique hand.
     const _solutionCache = {};
 
     function computeSolutions(digits, min, max) {
@@ -252,9 +221,47 @@
     }
 
     // ============================================================
+    // DIFFICULTY SCORING
+    // Count how many distinct solution expressions reach each target.
+    // Fewer solutions = harder. Tie-break by target value (higher = harder).
+    // ============================================================
+    function computeDifficulty(digits, min, max) {
+        const leaves = digits.map((d, i) => ({
+            r:    rat(d, 1),
+            tree: { type: 'leaf', id: i, value: d }
+        }));
+
+        const counts = new Map();
+        for (const { r } of allResults(leaves)) {
+            if (r && r.d === 1 && r.n >= min && r.n <= max && Number.isFinite(r.n)) {
+                counts.set(r.n, (counts.get(r.n) || 0) + 1);
+            }
+        }
+        return counts; // Map<integer, solutionCount>
+    }
+
+    function sortByDifficulty(targets, difficultyCounts) {
+        return [...targets].sort((a, b) => {
+            const ca = difficultyCounts.get(a) || 0;
+            const cb = difficultyCounts.get(b) || 0;
+            // More solutions = easier, so easier first (ascending by count).
+            // Tie-break: lower number first.
+            if (ca !== cb) return cb - ca;
+            return a - b;
+        });
+    }
+
+    // Star rating: 1-3 stars based on solution count
+    function difficultyStars(count) {
+        if (count >= 8) return 1;
+        if (count >= 3) return 2;
+        return 3;
+    }
+
+    // ============================================================
     // EXPRESSION RENDERING
     // ============================================================
-    const OP_STR = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+    const OP_STR = { '+': '+', '-': '\u2212', '*': '\u00D7', '/': '\u00F7' };
 
     function treeToExpr(node) {
         if (node.type === 'leaf') return String(node.value);
@@ -264,9 +271,6 @@
         return `${l} ${op} ${r}`;
     }
 
-    // Extract ordered animation steps from the tree.
-    // Leaf IDs 0–3 map to initial digit cards; result IDs start at 4.
-    // Returns Array<{ aId, bId, op, resultId }>
     function treeToSteps(tree) {
         let nextId = 4;
         const steps = [];
@@ -313,7 +317,6 @@
         return { ...round, selected: sel };
     }
 
-    // Force-select exactly two cards (used in demo animation).
     function roundSelectTwo(round, aIdx, bIdx) {
         return { ...round, selected: [aIdx, bIdx] };
     }
@@ -348,14 +351,7 @@
     // ============================================================
     function getTodayDigits() {
         try {
-            const pNum = window.getTodayPuzzleNumber
-                ? window.getTodayPuzzleNumber()
-                : (() => {
-                    const epoch = new Date('2025-01-01T00:00:00Z');
-                    const now   = new Date();
-                    const local = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                    return Math.floor((local - epoch) / 86400000) + 1;
-                })();
+            const pNum = getTodayPuzzleNum();
             return window.generatePuzzle ? window.generatePuzzle(pNum) : [2, 3, 4, 4];
         } catch (e) { console.error('[Speakeasy] getDigitsForPuzzle failed:', e); return [2, 3, 4, 4]; }
     }
@@ -363,13 +359,6 @@
     // ============================================================
     // FORMAT HELPERS
     // ============================================================
-    function fmtTimer(ms) {
-        const s   = Math.max(0, Math.ceil(ms / 1000));
-        const m   = Math.floor(s / 60);
-        const sec = s % 60;
-        return m === 0 ? sec + 's' : `${m}:${sec.toString().padStart(2, '0')}`;
-    }
-
     function makeNumberNode(n) {
         if (window.formatNumberHTML) return window.formatNumberHTML(n);
         return document.createTextNode(Number.isInteger(n) ? String(n) : n.toFixed(2));
@@ -422,8 +411,6 @@
 
     // ============================================================
     // DIAMOND BOARD RENDERER
-    // Works for both the main arena and the mini demo board.
-    // Reuses base-game .card / .selected / .first / .second classes.
     // ============================================================
     function renderBoard(el, round) {
         SLOT_CLASSES.forEach((cls, slotIdx) => {
@@ -491,7 +478,6 @@
                 if (roundRemaining(next).length === 1) onResolve(next);
                 return;
             }
-            // Tap overlay backdrop → deselect
             if (opOvl && !opBtn) {
                 const r = getRound();
                 setRound({ ...r, selected: [] });
@@ -501,78 +487,87 @@
     }
 
     // ============================================================
-    // BUBBLE LAYOUT  (order slots positioned in an elliptical ring)
-    //
-    // Why ellipse, not circle?
-    //   The diamond grid is 320 px wide on a ~390 px screen, leaving only
-    //   ~35 px of horizontal margin per side. A circle big enough to clear
-    //   the tiles would go off-screen left/right.
-    //   An ellipse lets us use the much larger vertical space of the arena
-    //   (typically 500–700 px) so most bubbles sit comfortably above/below
-    //   the tiles while the left/right bubbles hug the screen edges.
-    //
-    //   rx  = horizontal semi-axis  (limited by screen width)
-    //   ry  = vertical   semi-axis  (uses arena height — much more room)
+    // MID-GAME STATE PERSISTENCE
     // ============================================================
-    function positionBubbles(screenEl, arenaEl, orderBook) {
-        const container = screenEl.querySelector('.spk-bubbles-container');
-        if (!container || !orderBook.length) return;
+    function saveGameState(puzzleNum, targetsList, solvedList, currentIdx, elapsedMs) {
+        const state = {
+            puzzleNum,
+            targetsList,
+            solvedList,
+            currentIdx,
+            elapsedMs
+        };
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    }
 
-        const screenRect = screenEl.getBoundingClientRect();
-        const arenaRect  = arenaEl.getBoundingClientRect();
+    function loadGameState() {
+        try {
+            const raw = localStorage.getItem(STATE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (e) {
+            console.error('[Speakeasy] loadGameState failed:', e);
+            return null;
+        }
+    }
 
-        // Diamond center relative to screenEl.
-        // Shift cy up 30 px: undo-row (36 px) + fb-row (24 px) sit below the diamond
-        // inside the arena flex-column, so the diamond's optical center is above
-        // the arena's geometric center.
-        const cx = arenaRect.left + arenaRect.width  / 2 - screenRect.left;
-        const cy = arenaRect.top  + arenaRect.height / 2 - screenRect.top - 30;
+    function clearGameState() {
+        localStorage.removeItem(STATE_KEY);
+    }
 
-        const BUBBLE_D = 30;          // diameter (px) — update .spk-bubble in CSS too
-        const BR       = BUBBLE_D / 2;
+    function markTodayPlayed(puzzleNum) {
+        localStorage.setItem(TODAY_KEY, String(puzzleNum));
+    }
 
-        // rx: reach toward the left/right screen edges
-        const rx = Math.max(140, Math.min(cx, screenRect.width - cx) - BR - 4);
-
-        // ry: reach toward the top/bottom of the arena.
-        //     Top bound: stay inside the arena (don't cover the meta row above it).
-        //     Bottom bound: go all the way to the arena's bottom edge.
-        const arenaTopRel    = arenaRect.top    - screenRect.top;
-        const arenaBottomRel = arenaRect.bottom - screenRect.top;
-        const ryUp   = Math.max(140, cy - arenaTopRel    - BR - 10);
-        const ryDown = Math.max(140, arenaBottomRel - cy - BR - 10);
-        // Use the smaller of the two so the ellipse is symmetric top-to-bottom.
-        const ry = Math.min(ryUp, ryDown);
-
-        // Always one ring — max 24 bubbles fits a single ellipse comfortably.
-        const rings = [{ items: orderBook, rx, ry }];
-
-        rings.forEach(({ items, rx, ry }) => {
-            items.forEach((n, i) => {
-                const angle = -Math.PI / 2 + i * (2 * Math.PI / items.length);
-                const x = cx + rx * Math.cos(angle) - BUBBLE_D / 2;
-                const y = cy + ry * Math.sin(angle) - BUBBLE_D / 2;
-                const bubble = container.querySelector(`[data-order="${n}"]`);
-                if (bubble) {
-                    bubble.style.left = x.toFixed(1) + 'px';
-                    bubble.style.top  = y.toFixed(1) + 'px';
-                }
-            });
-        });
+    function hasTodayBeenPlayed() {
+        const played = localStorage.getItem(TODAY_KEY);
+        return played === String(getTodayPuzzleNum());
     }
 
     // ============================================================
-    // INTRO SCREEN  (shown once on first After Hours launch)
+    // SUPABASE SYNC
     // ============================================================
-    function showIntro(totalOrders, onStart) {
+    async function syncToSupabase(puzzleNum, targetsList, solvedList, totalTimeSec) {
+        if (!window.make24Db) return;
+        try {
+            const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
+            const deviceId = saved.deviceId;
+            if (!deviceId) return;
+
+            const isPerfect = solvedList.length === targetsList.length;
+            const result = await window.make24Db.rpc('record_speakeasy_solve', {
+                p_device_id:          deviceId,
+                p_puzzle_num:         puzzleNum,
+                p_targets_total:      targetsList.length,
+                p_targets_solved:     solvedList.length,
+                p_total_time:         totalTimeSec,
+                p_hints_used:         0,
+                p_targets_list:       targetsList,
+                p_targets_solved_list: solvedList
+            });
+
+            if (result.error) {
+                console.error('[Speakeasy] record_speakeasy_solve error:', result.error);
+            } else {
+                console.log('[Speakeasy] synced to Supabase:', result.data);
+            }
+        } catch (e) {
+            console.error('[Speakeasy] syncToSupabase failed:', e);
+        }
+    }
+
+    // ============================================================
+    // INTRO SCREEN  (shown once on first launch)
+    // ============================================================
+    function showIntro(totalTargets, onStart) {
         showOverlay((el) => {
             el.classList.add('spk-overlay-center');
             el.innerHTML = `
 <div class="spk-intro-card">
-  <div class="spk-intro-icon">🌊</div>
-  <div class="spk-intro-title">After Hours</div>
-  <div class="spk-intro-body">Fill every order before the tide rises.</div>
-  <div class="spk-intro-tag">Integers 1&ndash;${ORDER_MAX} &middot; ${totalOrders} orders today</div>
+  <div class="spk-intro-icon">\uD83C\uDF78</div>
+  <div class="spk-intro-title">Speakeasy</div>
+  <div class="spk-intro-body">Make every number from 1\u2013${ORDER_MAX}, one at a time. ${SECONDS_PER_TARGET}s per target.</div>
+  <div class="spk-intro-tag">${totalTargets} targets today</div>
   <button class="spk-btn spk-btn-primary spk-intro-start">Let's go</button>
 </div>`;
             el.querySelector('.spk-intro-start').addEventListener('click', () => {
@@ -597,12 +592,10 @@
             const aIdx = idToCardIdx[step.aId];
             const bIdx = idToCardIdx[step.bId];
 
-            // Phase 1: highlight the two operand cards
             demoRound = roundSelectTwo(demoRound, aIdx, bIdx);
             renderBoard(miniEl, demoRound);
 
             const t1 = setTimeout(() => {
-                // Phase 2: apply the operator
                 const next = roundApplyOp(demoRound, step.op);
                 if (!next) { onDone(); return; }
                 demoRound = next;
@@ -620,7 +613,7 @@
     }
 
     // ============================================================
-    // SOLUTION MODAL  (tapped from end screen on a missed order)
+    // SOLUTION MODAL  (tapped from end screen on a missed target)
     // ============================================================
     function showSolutionModal(gameScreen, n, tree, digits) {
         const expr  = treeToExpr(tree);
@@ -655,7 +648,6 @@
         let demoTimeouts = [];
         let demoRunning  = false;
 
-        // Render initial state
         renderBoard(miniEl, createRound([...digits]));
 
         function stopDemo() {
@@ -670,9 +662,8 @@
             if (demoRunning) return;
             demoRunning          = true;
             watchBtn.disabled    = true;
-            watchBtn.textContent = 'Playing…';
+            watchBtn.textContent = 'Playing\u2026';
             demoTimeouts         = [];
-            // Reset board to initial digits before playing
             renderBoard(miniEl, createRound([...digits]));
             playDemoAnimation(miniEl, digits, steps, demoTimeouts, () => {
                 demoRunning          = false;
@@ -683,31 +674,14 @@
 
         closeBtn.addEventListener('click', () => { stopDemo(); modal.remove(); });
 
-        // Tap backdrop → close
         modal.addEventListener('click', (e) => {
             if (!e.target.closest('.spk-sol-card')) { stopDemo(); modal.remove(); }
         });
     }
 
     // ============================================================
-    // PERFECT COMPLETION CELEBRATION
+    // CONFETTI  (reuses app's #confetti container)
     // ============================================================
-
-    // Staggered pulse-glow wave through every bubble in orderBook order.
-    function animatePerfectBubbles(screenEl, orderBook) {
-        orderBook.forEach((n, i) => {
-            const bubble = screenEl.querySelector(`.spk-bubble[data-order="${n}"]`);
-            if (!bubble) return;
-            // Remove and re-add the class so re-play restarts cleanly.
-            setTimeout(() => {
-                bubble.classList.remove('spk-bubble-celebrate');
-                void bubble.offsetWidth; // force reflow
-                bubble.classList.add('spk-bubble-celebrate');
-            }, i * 65);
-        });
-    }
-
-    // Reuse the app's #confetti container (z-index 1000, above the overlay at 600).
     function _launchConfetti() {
         const container = document.getElementById('confetti');
         if (!container) return;
@@ -730,15 +704,13 @@
     // ============================================================
     // END SCREEN
     // ============================================================
-    function _showAhEnd(screen, foundSet, orderBook, solutionsByTarget, digits, isComplete) {
-        const total = orderBook.length;
-        const found = foundSet.size;
-        const pct   = Math.round(100 * found / total);
-        const pb    = getAhBest();
-        const isPB  = !pb || found > pb.count || (found === pb.count && pct > pb.pct);
+    function _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum) {
+        const total     = targetsList.length;
+        const solved    = solvedSet.size;
+        const isPerfect = solved === total;
 
-        const chipsHTML = orderBook.map(n => {
-            if (foundSet.has(n)) {
+        const chipsHTML = targetsList.map(n => {
+            if (solvedSet.has(n)) {
                 return `<span class="spk-chip spk-chip-found">${n}</span>`;
             }
             const hasSol = solutionsByTarget.has(n);
@@ -747,19 +719,17 @@
                          title="${hasSol ? 'Tap to see solution' : ''}">${n}</span>`;
         }).join('');
 
+        const shareEmoji = targetsList.map(n => solvedSet.has(n) ? '\uD83D\uDFE9' : '\u2B1C').join('');
+
         screen.innerHTML = `
-<div class="spk-result${isComplete ? ' spk-result-perfect' : ''}">
-  <div class="spk-result-icon">${isComplete ? '\u2B50' : '\uD83C\uDF0A'}</div>
-  <div class="spk-result-heading">${isComplete ? 'Perfect!' : 'Time\u2019s up'}</div>
-  <div class="spk-result-stat">${found}/${total}${isComplete ? '' : ' \u00B7 ' + pct + '%'}</div>
-  ${isPB && !isComplete
-      ? '<div class="spk-result-new-pb">New best!</div>'
-      : (!isComplete && pb ? `<div class="spk-result-prev-pb">Best: ${pb.count}/${pb.total} (${pb.pct}%)</div>` : '')}
-  ${found < total ? '<div class="spk-result-hint">Tap a missed order to see a solution.</div>' : ''}
+<div class="spk-result${isPerfect ? ' spk-result-perfect' : ''}">
+  <div class="spk-result-icon">${isPerfect ? '\u2B50' : '\u23F0'}</div>
+  <div class="spk-result-heading">${isPerfect ? 'Perfect!' : 'Time\u2019s up'}</div>
+  <div class="spk-result-stat">${solved}/${total}</div>
+  ${!isPerfect && solved > 0 ? '<div class="spk-result-hint">Tap a missed target to see a solution.</div>' : ''}
   <div class="spk-result-book" id="spkResultBook">${chipsHTML}</div>
   <div class="spk-result-actions">
     <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
-    <button class="spk-btn spk-btn-primary" id="spkRetryBtn">Play Again</button>
     <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Close</button>
   </div>
 </div>`;
@@ -773,41 +743,95 @@
             if (tree) showSolutionModal(screen, n, tree, digits);
         });
 
-        screen.querySelector('#spkShareBtn').addEventListener('click', () =>
-            shareText(`I filled ${found}/${total} orders (${pct}%) in After Hours. Can you beat me?`));
-        screen.querySelector('#spkRetryBtn').addEventListener('click', launchAfterHours);
+        screen.querySelector('#spkShareBtn').addEventListener('click', () => {
+            shareText(`Speakeasy #${puzzleNum}\n${shareEmoji}\n${solved}/${total} targets`);
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'result_shared', {
+                    puzzle_num: puzzleNum,
+                    is_speakeasy: true,
+                    targets_solved: solved,
+                    targets_total: total
+                });
+            }
+        });
         screen.querySelector('#spkBackBtn').addEventListener('click', hideOverlay);
     }
 
     // ============================================================
-    // AFTER HOURS GAME SCREEN
+    // CHIPS ROW RENDERER
     // ============================================================
-    function startAfterHoursMode(digits, orderBook, solutionsByTarget) {
-        const totalOrders = orderBook.length;
-        const durationMs  = totalOrders * SECONDS_PER_ORDER * 1000;
+    function renderChips(chipsRow, targetsList, solvedSet, currentIdx) {
+        chipsRow.innerHTML = targetsList.map((n, i) => {
+            if (solvedSet.has(n)) {
+                return `<span class="spk-seq-chip spk-seq-chip-done">${n}</span>`;
+            }
+            if (i === currentIdx) {
+                return `<span class="spk-seq-chip spk-seq-chip-active">${n}</span>`;
+            }
+            if (i < currentIdx) {
+                // Skipped (timer ran out on this one)
+                return `<span class="spk-seq-chip spk-seq-chip-missed">${n}</span>`;
+            }
+            return `<span class="spk-seq-chip spk-seq-chip-pending">${n}</span>`;
+        }).join('');
+    }
 
-        let foundSet = new Set();
-        let round    = createRound([...digits]);
-        let started  = null;
-        let rafId    = null;
-        let finished = false;
-        let fbTimer  = null;
+    // ============================================================
+    // SEQUENCE-RUN GAME SCREEN
+    // ============================================================
+    function startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, resumeState) {
+        const totalTargets = targetsList.length;
+
+        let solvedSet  = new Set(resumeState ? resumeState.solvedList : []);
+        let currentIdx = resumeState ? resumeState.currentIdx : 0;
+        let round      = createRound([...digits]);
+        let timerStart = null;
+        let rafId      = null;
+        let finished   = false;
+        let fbTimer    = null;
+        let totalElapsedBefore = resumeState ? resumeState.elapsedMs : 0;
+
+        // Skip already-completed indices at start
+        while (currentIdx < totalTargets && solvedSet.has(targetsList[currentIdx])) {
+            currentIdx++;
+        }
+
+        if (currentIdx >= totalTargets || solvedSet.size === totalTargets) {
+            // All done already (edge case from resume)
+            finished = true;
+            clearGameState();
+            markTodayPlayed(puzzleNum);
+            showOverlay((el) => {
+                el.innerHTML = '<div class="spk-game-screen"></div>';
+                const screen = el.querySelector('.spk-game-screen');
+                _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
+            });
+            return;
+        }
 
         showOverlay((el) => {
-            // Bubbles are created here (un-positioned), positioned after layout below.
-            const bubblesHTML = orderBook
-                .map(n => `<div class="spk-bubble" data-order="${n}"></div>`)
-                .join('');
+            const currentTarget = targetsList[currentIdx];
+            const stars = difficultyStars(difficultyCounts.get(currentTarget) || 0);
+            const starsStr = '\u2605'.repeat(stars) + '\u2606'.repeat(3 - stars);
 
             el.innerHTML = `
 <div class="spk-game-screen">
-  <div class="spk-bubbles-container" id="spkBubbles">${bubblesHTML}</div>
   <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Exit After Hours">&#8249;</button>
-    <div class="spk-topbar-spacer">
-      <div class="spk-countdown" id="spkCountdown" aria-live="assertive" aria-atomic="true"></div>
+    <button class="spk-back-btn" aria-label="Exit Speakeasy">&#8249;</button>
+    <span class="spk-badge">SPEAKEASY</span>
+    <div class="spk-topbar-right">
+      <span class="spk-stars" id="spkStars">${starsStr}</span>
+      <span class="spk-topbar-progress" id="spkProgress">${solvedSet.size}/${totalTargets}</span>
     </div>
   </div>
+  <div class="spk-target-row">
+    <span class="spk-target-label">Make</span>
+    <span class="spk-target-number" id="spkTargetNum">${currentTarget}</span>
+  </div>
+  <div class="spk-timer-bar-track">
+    <div class="spk-timer-bar-fill" id="spkTimerFill"></div>
+  </div>
+  <div class="spk-chips-row" id="spkChips"></div>
   <div class="spk-arena" id="spkArena">
     <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
@@ -827,20 +851,26 @@
         <button class="op-btn" data-op="/">&divide;</button>
       </div>
     </div>
-    <div class="spk-water" id="spkWater"></div>
   </div>
 </div>`;
 
             const gameScreen  = el.querySelector('.spk-game-screen');
-            const arenaEl     = el.querySelector('#spkArena');
-            const waterEl     = el.querySelector('#spkWater');
+            const targetNumEl = el.querySelector('#spkTargetNum');
+            const timerFillEl = el.querySelector('#spkTimerFill');
+            const chipsRow    = el.querySelector('#spkChips');
+            const progressEl  = el.querySelector('#spkProgress');
+            const starsEl     = el.querySelector('#spkStars');
             const fbEl        = el.querySelector('#spkFb');
-            const countdownEl = el.querySelector('#spkCountdown');
+
+            renderChips(chipsRow, targetsList, solvedSet, currentIdx);
 
             el.querySelector('.spk-back-btn').addEventListener('click', () => {
                 finished = true;
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
+                // Save mid-game state
+                const elapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
+                saveGameState(puzzleNum, targetsList, [...solvedSet], currentIdx, elapsed);
                 hideOverlay();
             });
 
@@ -851,12 +881,68 @@
                 fbTimer = setTimeout(() => fbEl.classList.remove('spk-fb-show'), 900);
             }
 
-            function markFilled(n) {
-                foundSet.add(n);
-                const bubble = el.querySelector(`.spk-bubble[data-order="${n}"]`);
-                if (bubble && !bubble.classList.contains('spk-bubble-found')) {
-                    bubble.textContent = n;
-                    bubble.classList.add('spk-bubble-found');
+            function advanceTarget() {
+                currentIdx++;
+                // Skip any already-solved
+                while (currentIdx < totalTargets && solvedSet.has(targetsList[currentIdx])) {
+                    currentIdx++;
+                }
+
+                if (currentIdx >= totalTargets || solvedSet.size === totalTargets) {
+                    // Game complete!
+                    finishGame(true);
+                    return;
+                }
+
+                // Update UI for new target
+                const newTarget = targetsList[currentIdx];
+                targetNumEl.textContent = newTarget;
+                progressEl.textContent = `${solvedSet.size}/${totalTargets}`;
+                const s = difficultyStars(difficultyCounts.get(newTarget) || 0);
+                starsEl.textContent = '\u2605'.repeat(s) + '\u2606'.repeat(3 - s);
+                renderChips(chipsRow, targetsList, solvedSet, currentIdx);
+
+                // Reset timer for new target
+                totalElapsedBefore += (Date.now() - timerStart);
+                timerStart = Date.now();
+
+                // Reset board
+                round = createRound([...digits]);
+                renderBoard(el, round);
+            }
+
+            function finishGame(completed) {
+                finished = true;
+                cancelAnimationFrame(rafId);
+                clearTimeout(fbTimer);
+                clearGameState();
+                markTodayPlayed(puzzleNum);
+
+                const totalElapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
+                const totalTimeSec = Math.round(totalElapsed / 1000);
+
+                // Sync to Supabase
+                syncToSupabase(puzzleNum, targetsList, [...solvedSet], totalTimeSec);
+
+                // GA event
+                if (typeof gtag !== 'undefined') {
+                    gtag('event', 'puzzle_solved', {
+                        puzzle_num: puzzleNum,
+                        is_speakeasy: true,
+                        targets_solved: solvedSet.size,
+                        targets_total: totalTargets,
+                        solve_time: totalTimeSec,
+                        is_perfect: solvedSet.size === totalTargets
+                    });
+                }
+
+                if (solvedSet.size === totalTargets) {
+                    _launchConfetti();
+                    setTimeout(() => {
+                        _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
+                    }, 1200);
+                } else {
+                    _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
                 }
             }
 
@@ -868,75 +954,109 @@
                 (resolved) => {
                     if (finished) return;
                     const val = roundGetValue(resolved);
+                    const currentTarget = targetsList[currentIdx];
 
-                    if (val !== null && Number.isInteger(val) && orderBook.includes(val)) {
-                        if (foundSet.has(val)) {
-                            showFb('Already filled · ' + val, 'dupe');
-                        } else {
-                            markFilled(val);
-                            showFb('+1 · ' + val, 'new');
-                            if (foundSet.size === totalOrders) {
-                                finished = true;
-                                cancelAnimationFrame(rafId);
-                                countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
-                                saveAhBest(foundSet.size, totalOrders);
-                                // Celebrate: bubble wave + confetti, then show end screen.
-                                animatePerfectBubbles(el, orderBook);
-                                _launchConfetti();
-                                setTimeout(() => _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, true), 1800);
-                                return;
-                            }
-                        }
+                    if (val !== null && Number.isInteger(val) && val === currentTarget) {
+                        // Correct! Mark as solved
+                        solvedSet.add(val);
+                        showFb('\u2713 ' + val, 'new');
+                        progressEl.textContent = `${solvedSet.size}/${totalTargets}`;
+                        renderChips(chipsRow, targetsList, solvedSet, currentIdx);
+
+                        // Save state
+                        const elapsed = totalElapsedBefore + (Date.now() - timerStart);
+                        saveGameState(puzzleNum, targetsList, [...solvedSet], currentIdx, elapsed);
+
+                        // After brief delay, advance to next
+                        setTimeout(() => {
+                            if (finished) return;
+                            advanceTarget();
+                        }, RESET_MS);
+                    } else if (val !== null && Number.isInteger(val) && solutionsByTarget.has(val) && val !== currentTarget) {
+                        // Valid target but not the current one
+                        showFb('Need ' + currentTarget + ', not ' + val, 'dupe');
+                        setTimeout(() => {
+                            if (finished) return;
+                            _round = createRound([...digits]);
+                            round  = _round;
+                            renderBoard(el, _round);
+                        }, RESET_MS);
                     } else if (val !== null && !Number.isInteger(val)) {
                         showFb('Not an integer', 'bad');
+                        setTimeout(() => {
+                            if (finished) return;
+                            _round = createRound([...digits]);
+                            round  = _round;
+                            renderBoard(el, _round);
+                        }, RESET_MS);
+                    } else {
+                        // Wrong value
+                        showFb(val + ' \u2260 ' + currentTarget, 'bad');
+                        setTimeout(() => {
+                            if (finished) return;
+                            _round = createRound([...digits]);
+                            round  = _round;
+                            renderBoard(el, _round);
+                        }, RESET_MS);
                     }
-
-                    // Reset to original 4 digits for next attempt
-                    setTimeout(() => {
-                        if (finished) return;
-                        _round = createRound([...digits]);
-                        round  = _round;
-                        renderBoard(el, _round);
-                    }, RESET_MS);
                 }
             );
 
-            // Position bubbles after layout is stable, then start the clock
+            // Render initial board and start timer
             requestAnimationFrame(() => {
-                positionBubbles(gameScreen, arenaEl, orderBook);
                 renderBoard(el, round);
-                started = Date.now();
-                rafId   = requestAnimationFrame(tick);
+                timerStart = Date.now();
+                rafId = requestAnimationFrame(tick);
             });
 
             function tick() {
                 if (finished) return;
-                const elapsed   = Date.now() - started;
-                const remaining = durationMs - elapsed;
+                const elapsed   = Date.now() - timerStart;
+                const targetMs  = SECONDS_PER_TARGET * 1000;
+                const remaining = targetMs - elapsed;
+                const pct       = Math.max(0, remaining / targetMs);
+
+                // Update timer bar
+                timerFillEl.style.transform = `scaleX(${pct.toFixed(4)})`;
+
+                // Color transitions
+                timerFillEl.classList.toggle('spk-timer-warn', remaining < 15000 && remaining >= 5000);
+                timerFillEl.classList.toggle('spk-timer-danger', remaining < 5000);
 
                 if (remaining <= 0) {
-                    finished = true;
-                    waterEl.style.height = '100%';
-                    countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
-                    saveAhBest(foundSet.size, totalOrders);
-                    _showAhEnd(gameScreen, foundSet, orderBook, solutionsByTarget, digits, false);
-                    return;
-                }
+                    // Time's up for this target — skip to next
+                    renderChips(chipsRow, targetsList, solvedSet, currentIdx);
 
-                waterEl.style.height = ((elapsed / durationMs) * 100).toFixed(1) + '%';
-                waterEl.classList.toggle('spk-water-urgent', remaining < 30000);
+                    currentIdx++;
+                    while (currentIdx < totalTargets && solvedSet.has(targetsList[currentIdx])) {
+                        currentIdx++;
+                    }
 
-                // Red numeric countdown: visible only during the final 30 seconds.
-                if (remaining < 30000) {
-                    const remSec = Math.ceil(remaining / 1000);
-                    const mm = Math.floor(remSec / 60);
-                    const ss = remSec % 60;
-                    countdownEl.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
-                    countdownEl.classList.add('spk-countdown-visible');
-                    // Subtle blink in the final 10 seconds.
-                    countdownEl.classList.toggle('spk-countdown-pulse', remaining < 10000);
-                } else {
-                    countdownEl.classList.remove('spk-countdown-visible', 'spk-countdown-pulse');
+                    if (currentIdx >= totalTargets) {
+                        finishGame(false);
+                        return;
+                    }
+
+                    // Update UI for new target
+                    const newTarget = targetsList[currentIdx];
+                    targetNumEl.textContent = newTarget;
+                    progressEl.textContent = `${solvedSet.size}/${totalTargets}`;
+                    const s = difficultyStars(difficultyCounts.get(newTarget) || 0);
+                    starsEl.textContent = '\u2605'.repeat(s) + '\u2606'.repeat(3 - s);
+                    renderChips(chipsRow, targetsList, solvedSet, currentIdx);
+
+                    // Reset timer
+                    totalElapsedBefore += targetMs;
+                    timerStart = Date.now();
+
+                    // Reset board
+                    _round = createRound([...digits]);
+                    round  = _round;
+                    renderBoard(el, _round);
+
+                    // Reset timer bar visuals
+                    timerFillEl.classList.remove('spk-timer-warn', 'spk-timer-danger');
+                    timerFillEl.style.transform = 'scaleX(1)';
                 }
 
                 rafId = requestAnimationFrame(tick);
@@ -948,30 +1068,53 @@
     // LAUNCH  (direct entry — no selection screen)
     // ============================================================
     function launchAfterHours() {
-        // Access gate — show paywall if trial exhausted and not unlocked.
         if (!canEnterAfterHoursToday()) {
             showPaywallModal();
             return;
         }
-        // Record trial day only when the paywall system is active.
         if (HARD_MODE_PAYWALL_ENABLED && !isUnlocked()) addTrialDay(getLocalDayKey());
 
+        const puzzleNum         = getTodayPuzzleNum();
         const digits            = getTodayDigits();
         const solutionsByTarget = computeSolutions(digits, ORDER_MIN, ORDER_MAX);
-        const orderBook         = [...solutionsByTarget.keys()].sort((a, b) => a - b);
+        const difficultyCounts  = computeDifficulty(digits, ORDER_MIN, ORDER_MAX);
+        const allTargets        = [...solutionsByTarget.keys()];
+        const targetsList       = sortByDifficulty(allTargets, difficultyCounts);
 
-        // Debug: open the browser console to verify reachable orders.
-        // For flexible digit sets like {2,3,5,8} every integer 1–24 is genuinely reachable.
-        console.log(`[AfterHours] digits: ${digits.join(',')} → ${orderBook.length} reachable order(s) in [${ORDER_MIN}..${ORDER_MAX}]:`, orderBook);
+        console.log(`[Speakeasy] digits: ${digits.join(',')} \u2192 ${targetsList.length} targets in [${ORDER_MIN}..${ORDER_MAX}]:`, targetsList);
 
-        if (orderBook.length === 0) {
-            // Pathological edge case — guard gracefully
+        if (targetsList.length === 0) {
             showOverlay((el) => {
                 el.classList.add('spk-overlay-center');
                 el.innerHTML = `
 <div class="spk-intro-card">
-  <div class="spk-intro-title">Thin market today</div>
-  <div class="spk-intro-body">No achievable orders for today&rsquo;s digits.</div>
+  <div class="spk-intro-title">No targets today</div>
+  <div class="spk-intro-body">No achievable targets for today\u2019s digits.</div>
+  <button class="spk-btn spk-btn-ghost spk-intro-close">Close</button>
+</div>`;
+                el.querySelector('.spk-intro-close').addEventListener('click', hideOverlay);
+                el.addEventListener('click', (e) => { if (e.target === el) hideOverlay(); });
+            });
+            return;
+        }
+
+        // Check for resumable state
+        const saved = loadGameState();
+        if (saved && saved.puzzleNum === puzzleNum) {
+            // Resume from saved state
+            startSequenceRun(digits, saved.targetsList, solutionsByTarget, difficultyCounts, puzzleNum, saved);
+            return;
+        }
+
+        // Check if already played today
+        if (hasTodayBeenPlayed()) {
+            showOverlay((el) => {
+                el.classList.add('spk-overlay-center');
+                el.innerHTML = `
+<div class="spk-intro-card">
+  <div class="spk-intro-icon">\u2705</div>
+  <div class="spk-intro-title">Done for today</div>
+  <div class="spk-intro-body">You\u2019ve already played Speakeasy today. Come back tomorrow!</div>
   <button class="spk-btn spk-btn-ghost spk-intro-close">Close</button>
 </div>`;
                 el.querySelector('.spk-intro-close').addEventListener('click', hideOverlay);
@@ -982,20 +1125,17 @@
 
         const introSeen = localStorage.getItem(INTRO_KEY) === '1';
         if (!introSeen) {
-            showIntro(orderBook.length, () =>
-                startAfterHoursMode(digits, orderBook, solutionsByTarget));
+            showIntro(targetsList.length, () =>
+                startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, null));
         } else {
-            startAfterHoursMode(digits, orderBook, solutionsByTarget);
+            startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, null);
         }
     }
 
     // ============================================================
     // LICENSE KEY VALIDATION  (Lemon Squeezy)
-    // Step A: try direct browser fetch (works if LS allows CORS from this origin).
-    // Step B: if TypeError (CORS blocked), fall back to same-origin proxy /api/ls/validate.
     // ============================================================
     async function validateLicenseKey(key) {
-        // Dev shortcut — no network call needed.
         if (_devMode && key === 'TEST-KEY-1234') return true;
 
         const body    = `license_key=${encodeURIComponent(key)}`;
@@ -1005,25 +1145,22 @@
             const res  = await fetch(url, { method: 'POST', headers, body });
             const data = await res.json();
             if (!data.valid) return false;
-            // Validate product if configured (0 = skip check).
             if (LEMONSQUEEZY_PRODUCT_ID && data.meta?.product_id !== LEMONSQUEEZY_PRODUCT_ID) return false;
             return true;
         }
 
         try {
-            // Step A: direct to Lemon Squeezy API.
             return await tryUrl('https://api.lemonsqueezy.com/v1/licenses/validate');
         } catch (err) {
             if (err instanceof TypeError) {
-                // Likely CORS — Step B: same-origin proxy.
                 return await tryUrl('/api/ls/validate');
             }
-            throw err; // timeout or other network error — rethrow so caller shows "Network error"
+            throw err;
         }
     }
 
     // ============================================================
-    // PAYWALL MODAL  (shown when trial is exhausted)
+    // PAYWALL MODAL
     // ============================================================
     function showPaywallModal() {
         const status = afterHoursStatus();
@@ -1031,9 +1168,9 @@
             el.classList.add('spk-overlay-center');
             el.innerHTML = `
 <div class="spk-intro-card">
-  <div class="spk-intro-icon">🔑</div>
-  <div class="spk-intro-title">After Hours</div>
-  <div class="spk-intro-body">You&rsquo;ve had a ${status.max}-day preview. Support Make24 to keep After Hours.</div>
+  <div class="spk-intro-icon">\uD83D\uDD11</div>
+  <div class="spk-intro-title">Speakeasy</div>
+  <div class="spk-intro-body">You\u2019ve had a ${status.max}-day preview. Support Make24 to keep Speakeasy.</div>
   <div class="spk-paywall-actions">
     <button class="spk-btn spk-btn-primary spk-paywall-support">Support $${SUPPORT_PRICE_USD}</button>
     <button class="spk-btn spk-btn-ghost   spk-paywall-code">Enter code</button>
@@ -1054,8 +1191,7 @@
     }
 
     // ============================================================
-    // LICENSE ENTRY MODAL  (code input + validation)
-    // prefillKey: optional string to pre-fill (from URL ?license_key=)
+    // LICENSE ENTRY MODAL
     // ============================================================
     function showLicenseEntryModal(prefillKey) {
         showOverlay((el) => {
@@ -1118,8 +1254,6 @@
 
     // ============================================================
     // SETTINGS — AFTER HOURS SECTION
-    // Injected into #settingsAhSection whenever the settings modal opens.
-    // Visible only after first trial day used OR when unlocked.
     // ============================================================
     function renderSettingsAhSection() {
         const container = document.getElementById('settingsAhSection');
@@ -1127,14 +1261,13 @@
 
         const s = afterHoursStatus();
 
-        // ── A: After Hours status (only shown when the paywall system is active) ──
         let ahHTML = '';
         if (HARD_MODE_PAYWALL_ENABLED && (s.unlocked || s.used > 0)) {
             const statusLine = s.unlocked
-                ? 'After Hours: <strong>Unlocked \u2713</strong>'
-                : `After Hours: Preview (${s.used}/${s.max} days used)`;
+                ? 'Speakeasy: <strong>Unlocked \u2713</strong>'
+                : `Speakeasy: Preview (${s.used}/${s.max} days used)`;
             ahHTML = `
-<div class="settings-section-title">After Hours</div>
+<div class="settings-section-title">Speakeasy</div>
 <div class="spk-settings-ah">
   <p class="spk-settings-ah-status">${statusLine}</p>
   ${!s.unlocked ? `
@@ -1145,13 +1278,11 @@
 </div>`;
         }
 
-        // ── B: Optional tip/support link ──
         const supportHTML = (SUPPORT_ENABLED && SUPPORT_URL) ? `
 <div class="spk-settings-support-row">
   <button class="email-send-btn spk-settings-support-btn">${SUPPORT_LABEL}</button>
 </div>` : '';
 
-        // ── C: Feedback — always available ──
         const feedbackHTML = `
 <div class="settings-section-title">Feedback</div>
 <div class="spk-settings-feedback-row">
@@ -1160,7 +1291,6 @@
 
         container.innerHTML = ahHTML + supportHTML + feedbackHTML;
 
-        // Wire paywall buttons (only when flag is active and user has a trial record)
         if (HARD_MODE_PAYWALL_ENABLED && !s.unlocked && s.used > 0) {
             container.querySelector('#spkSettingsSupportBtn')?.addEventListener('click', () => {
                 document.getElementById('settingsModal')?.classList.remove('show');
@@ -1172,14 +1302,12 @@
             });
         }
 
-        // Wire support button
         if (SUPPORT_ENABLED && SUPPORT_URL) {
             container.querySelector('.spk-settings-support-btn')?.addEventListener('click', () => {
                 window.open(SUPPORT_URL, '_blank', 'noopener');
             });
         }
 
-        // Wire feedback button (always)
         container.querySelector('#spkFeedbackBtn').addEventListener('click', () => {
             document.getElementById('settingsModal')?.classList.remove('show');
             showFeedbackModal();
@@ -1187,22 +1315,22 @@
     }
 
     // ============================================================
-    // DEV HARNESS  (enabled by ?dev=1 — never shown in production)
+    // DEV HARNESS
     // ============================================================
     function showDevPanel() {
         if (!_devMode) return;
-        if (document.getElementById('spkDevPanel')) return; // already mounted
+        if (document.getElementById('spkDevPanel')) return;
 
         const panel = document.createElement('div');
         panel.id        = 'spkDevPanel';
         panel.className = 'spk-dev-panel';
         panel.innerHTML = `
-<div class="spk-dev-title">⚙ After Hours Dev</div>
+<div class="spk-dev-title">\u2699 Speakeasy Dev</div>
 <button id="devSolve">Simulate daily solve</button>
 <button id="devTrialReset">Reset trial (0 days)</button>
-<button id="devTrial2">Set trial = 2 days</button>
 <button id="devTrialFull">Exhaust trial (3 days)</button>
 <button id="devToggleUnlock">Toggle unlock</button>
+<button id="devResetSpeakeasy">Reset speakeasy state</button>
 <div class="spk-dev-meta">
   Checkout: ${LEMONSQUEEZY_CHECKOUT_URL}<br>
   Product ID: ${LEMONSQUEEZY_PRODUCT_ID}<br>
@@ -1213,7 +1341,7 @@
         panel.querySelector('#devSolve').addEventListener('click', () => {
             try {
                 const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
-                const today = window.getTodayPuzzleNumber ? window.getTodayPuzzleNumber() : 1;
+                const today = getTodayPuzzleNum();
                 if (!saved.history) saved.history = {};
                 saved.history[today] = Object.assign(
                     { moves: 3, solveTime: 30, undos: 0 },
@@ -1226,10 +1354,6 @@
         });
         panel.querySelector('#devTrialReset').addEventListener('click', () => {
             localStorage.removeItem(TRIAL_DAYS_KEY);
-            location.reload();
-        });
-        panel.querySelector('#devTrial2').addEventListener('click', () => {
-            localStorage.setItem(TRIAL_DAYS_KEY, JSON.stringify(['2020-01-01', '2020-01-02']));
             location.reload();
         });
         panel.querySelector('#devTrialFull').addEventListener('click', () => {
@@ -1245,11 +1369,15 @@
             }
             location.reload();
         });
+        panel.querySelector('#devResetSpeakeasy').addEventListener('click', () => {
+            localStorage.removeItem(STATE_KEY);
+            localStorage.removeItem(TODAY_KEY);
+            location.reload();
+        });
     }
 
     // ============================================================
-    // FEEDBACK MODAL  (Settings → "Send feedback")
-    // mailto: to FEEDBACK_EMAIL; Copy to clipboard as fallback.
+    // FEEDBACK MODAL
     // ============================================================
     function showFeedbackModal() {
         showOverlay((el) => {
@@ -1276,7 +1404,6 @@
                 const msg   = textarea.value.trim();
                 const reply = emailEl.value.trim();
                 const day   = getLocalDayKey();
-                // Truncate UA to keep mailto within limits
                 const ua  = navigator.userAgent.slice(0, 120);
                 const res = `${screen.width}x${screen.height}@${window.devicePixelRatio}x`;
                 const parts = [msg];
@@ -1322,11 +1449,10 @@
     }
 
     // ============================================================
-    // KEY INJECTION  (two placements, both gated: today solved)
+    // KEY INJECTION + "TRY SPEAKEASY" BUTTON
     // ============================================================
 
-    // Placement B: top-right of the victory card, near the badge.
-    // Condition: isTodaySolved() — any user who has solved today sees the key.
+    // Placement B: top-right of the victory card
     function injectKeyIntoVictoryCard() {
         if (!isTodaySolved()) return;
         const card = document.getElementById('victoryCard');
@@ -1337,16 +1463,32 @@
         const btn = document.createElement('button');
         btn.id        = 'spkKeyBtn';
         btn.className = 'spk-key-btn';
-        btn.setAttribute('aria-label', 'After Hours');
-        btn.setAttribute('title', 'After Hours');
-        btn.textContent = '🔑';
+        btn.setAttribute('aria-label', 'Speakeasy');
+        btn.setAttribute('title', 'Speakeasy');
+        btn.textContent = '\uD83D\uDD11';
         btn.addEventListener('click', (e) => { e.stopPropagation(); launchAfterHours(); });
         card.appendChild(btn);
     }
 
-    // Placement A: header top-bar, inserted after #streakDisplay.
-    // Condition: isTodaySolved() — any user who has solved today sees the key.
-    // Idempotent — safe to call repeatedly; only inserts once.
+    // "Try Speakeasy →" button injected into victory actions
+    function injectTrySpeakeasyButton() {
+        if (!isTodaySolved()) return;
+        const actionsEl = document.querySelector('.victory-actions');
+        if (!actionsEl) return;
+        if (document.getElementById('spkTryBtn')) return;
+
+        const btn = document.createElement('button');
+        btn.id        = 'spkTryBtn';
+        btn.className = 'spk-try-btn';
+        btn.textContent = 'Try Speakeasy \u2192';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            launchAfterHours();
+        });
+        actionsEl.appendChild(btn);
+    }
+
+    // Placement A: header top-bar, inserted after #streakDisplay
     function injectTopbarKey() {
         if (!isTodaySolved()) return;
         if (document.getElementById('spkTopbarKeyBtn')) return;
@@ -1356,9 +1498,9 @@
         const btn = document.createElement('button');
         btn.id        = 'spkTopbarKeyBtn';
         btn.className = 'spk-key-topbar';
-        btn.setAttribute('aria-label', 'After Hours');
-        btn.setAttribute('title', 'After Hours');
-        btn.textContent = '🔑';
+        btn.setAttribute('aria-label', 'Speakeasy');
+        btn.setAttribute('title', 'Speakeasy');
+        btn.textContent = '\uD83D\uDD11';
         btn.addEventListener('click', launchAfterHours);
         streakEl.insertAdjacentElement('afterend', btn);
     }
@@ -1374,15 +1516,16 @@
             const visible = backdrop.classList.contains('show');
             if (visible && !wasVisible) {
                 wasVisible = true;
-                // Victory card just opened — inject key in both locations.
                 injectKeyIntoVictoryCard();
+                injectTrySpeakeasyButton();
                 injectTopbarKey();
             }
             if (!visible && wasVisible) {
                 wasVisible = false;
-                // Card closed — remove the victory-card key (topbar key stays).
                 const k = document.getElementById('spkKeyBtn');
                 if (k) k.remove();
+                const t = document.getElementById('spkTryBtn');
+                if (t) t.remove();
             }
         });
         obs.observe(backdrop, { attributes: true, attributeFilter: ['class'] });
@@ -1396,10 +1539,8 @@
 
         const setup = () => {
             observeVictoryCard();
-            // If today was already solved before page load, show the topbar key immediately.
             injectTopbarKey();
 
-            // Re-render the After Hours section each time the settings modal opens.
             const settingsModal = document.getElementById('settingsModal');
             if (settingsModal) {
                 new MutationObserver(() => {
@@ -1407,16 +1548,14 @@
                 }).observe(settingsModal, { attributes: true, attributeFilter: ['class'] });
             }
 
-            // Auto-fill license key from URL: /unlock#key=XXXX or ?license_key=XXXX
+            // Auto-fill license key from URL
             const qp      = new URLSearchParams(window.location.search);
             const hashKey = (window.location.hash.match(/[#&]key=([^&]+)/) || [])[1];
             const urlKey  = qp.get('license_key') || (hashKey ? decodeURIComponent(hashKey) : null);
             if (urlKey && !isUnlocked()) {
-                // Brief delay so the page paints first.
                 setTimeout(() => showLicenseEntryModal(urlKey), 600);
             }
 
-            // Dev panel — only active when ?dev=1 is in the URL.
             showDevPanel();
         };
 
