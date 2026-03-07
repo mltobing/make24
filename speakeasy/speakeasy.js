@@ -1441,7 +1441,7 @@
 
         const btn = document.createElement('button');
         btn.id        = 'spkTryBtn';
-        btn.className = 'spk-try-btn';
+        btn.className = 'btn btn-challenge';
         btn.textContent = '\uD83D\uDD11 Hard Mode';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
