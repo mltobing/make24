@@ -63,6 +63,8 @@ const SOLUTION_THRESHOLD_EASY = 20;
 const SOLUTION_THRESHOLD_MEDIUM = 6;
 const TARGET_NUMBER = 24;
 const FLOAT_EPSILON = 0.0001;
+const ENABLE_COMPARISON_LINE = true;
+const MIN_COMPARISON_SAMPLE  = 10;
 
 // ============================================================
 // GAME STATE
@@ -1981,23 +1983,37 @@ function showConfetti() {
 }
 
 // Share result
-function generateShareText() {
+function buildDailyShareText() {
     const history = gameState.history[currentPuzzle.puzzleNum];
     const isPerfect = history?.completed && history.moves === PERFECT_MOVES && (history.undos || 0) === 0 && !history.hinted;
     const isFast = isPerfect && history?.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
-    const operators = history?.operators || playState.operatorHistory;
+    const moves = history?.moves ?? playState.moves;
+    const solveTime = history?.solveTime ?? (playState.startTime && playState.endTime
+        ? Math.round((playState.endTime - playState.startTime) / 1000) : null);
 
-    const opSymbols = { '+': '\u2795', '-': '\u2796', '*': '\u2716\uFE0F', '/': '\u2797' };
-    const opLine = operators.map(op => opSymbols[op]).join(' ');
+    let text = `\uD83E\uDDE0 Make24 \u2014 ${formatPuzzleDateLong(currentPuzzle.puzzleNum)}\n`;
+    text += '\n';
 
-    let text = `24 \u2014 ${formatPuzzleDateLong(currentPuzzle.puzzleNum)}\n`;
-    text += `${opLine}\n`;
-    if (isFast) text += `\u26A1 Perfect + Fast!\n`;
-    else if (isPerfect) text += `\u2B50 Perfect!\n`;
-    text += `\uD83D\uDD25 ${gameState.streak}\n`;
-    text += `${APP_CONFIG.publicUrl}`;
+    if (isFast)         text += `\u26A1 Perfect + Fast solve (${moves} moves)\n`;
+    else if (isPerfect) text += `\u2B50 Perfect solve (${moves} moves)\n`;
+    else                text += `\u2705 Solved in ${moves} moves\n`;
+
+    if (solveTime) text += `\u23F1 ${solveTime}s\n`;
+    if (gameState.streak > 0) text += `\uD83D\uDD25 ${gameState.streak} day streak\n`;
+
+    if (ENABLE_COMPARISON_LINE && lastPercentileData) {
+        const p = lastPercentileData.percentile, t = lastPercentileData.total_players;
+        if (p != null && t >= MIN_COMPARISON_SAMPLE && p >= 50) {
+            text += `\uD83C\uDFC5 Faster than ${p}% of players today\n`;
+        }
+    }
+
+    text += `\nCan you beat it?\n${APP_CONFIG.publicUrl}`;
     return text;
 }
+
+// Keep old name as alias so any callers still work
+function generateShareText() { return buildDailyShareText(); }
 
 function share() {
     if (typeof gtag !== 'undefined') {
@@ -2006,10 +2022,13 @@ function share() {
             is_perfect: (playState.moves === PERFECT_MOVES && playState.undoCount === 0)
         });
     }
-    const text = generateShareText();
+    const text = buildDailyShareText();
+    // Copy first (silent), then open native share sheet if available
+    navigator.clipboard.writeText(text).catch(() => {});
     if (navigator.share) {
-        navigator.share({ text }).catch(() => copyToClipboard(text));
-    } else { copyToClipboard(text); }
+        navigator.share({ text }).catch(() => {});
+    }
+    showToast('Copied!');
 }
 
 function copyToClipboard(text) {
