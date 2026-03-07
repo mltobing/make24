@@ -81,6 +81,8 @@ let currentPuzzle = {
     date: null,
     isArchive: false
 };
+// Expose so speakeasy.js can read the active puzzle (daily or archive)
+window.currentPuzzle = currentPuzzle;
 
 let playState = {
     cards: [],

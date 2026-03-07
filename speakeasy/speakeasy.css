@@ -195,13 +195,14 @@
 .spk-chips-row {
     display: flex;
     gap: 6px;
-    padding: 10px 16px;
+    padding: 10px 16px 12px;
     overflow-x: auto;
     flex-shrink: 0;
     scrollbar-width: none;
     -ms-overflow-style: none;
     justify-content: center;
     flex-wrap: wrap;
+    border-top: 1px solid #1e293b;
 }
 .spk-chips-row::-webkit-scrollbar { display: none; }
 
