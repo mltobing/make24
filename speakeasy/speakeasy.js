@@ -67,6 +67,8 @@
     const SUPPORT_URL     = '';
     const SUPPORT_LABEL   = 'Support';
     const FEEDBACK_EMAIL  = 'martin@kapework.com';
+    const ENABLE_COMPARISON_LINE = true;
+    const MIN_COMPARISON_SAMPLE  = 10;
 
     // ============================================================
     // GATE + ACCESS MODEL
@@ -369,12 +371,36 @@
     // ============================================================
     // SHARE
     // ============================================================
+
+    // Stub — returns null until backend supports Hard Mode percentile
+    // TODO: wire to real data when record_speakeasy_solve returns percentile
+    function getHardModePercentile() { return null; }
+
+    function buildHardModeShareText(puzzleNum, solved, total) {
+        const pub = (window.APP_CONFIG && window.APP_CONFIG.publicUrl) || 'make24.app';
+        let text = `\uD83E\uDDE0 Make24 Hard Mode\n\n`;
+        text += solved === total
+            ? `\uD83C\uDF0A Perfect! All ${total} targets solved\n`
+            : `\uD83C\uDF0A Filled ${solved}/${total} targets\n`;
+
+        if (ENABLE_COMPARISON_LINE) {
+            const pData = getHardModePercentile();
+            if (pData && pData.percentile != null && pData.total_players >= MIN_COMPARISON_SAMPLE && pData.percentile >= 50) {
+                text += `\uD83C\uDFC5 Better than ${pData.percentile}% of players today\n`;
+            }
+        }
+
+        text += `\nCan you beat it?\n${pub}`;
+        return text;
+    }
+
     function shareText(text) {
-        const pub  = (window.APP_CONFIG && window.APP_CONFIG.publicUrl) || 'make24.app';
-        const full = text + '\n' + pub;
+        // Copy first (silent), then open native share sheet if available
+        navigator.clipboard.writeText(text).catch(() => {});
         if (navigator.share) {
-            navigator.share({ text: full }).catch(() => clipText(full));
-        } else { clipText(full); }
+            navigator.share({ text }).catch(() => {});
+        }
+        if (window.showToast) window.showToast('Copied!');
     }
 
     function clipText(text) {
@@ -737,7 +763,7 @@
         });
 
         screen.querySelector('#spkShareBtn').addEventListener('click', () => {
-            shareText(`Hard Mode #${puzzleNum}\n${shareEmoji}\n${solved}/${total} targets`);
+            shareText(buildHardModeShareText(puzzleNum, solved, total));
             if (typeof gtag !== 'undefined') {
                 gtag('event', 'result_shared', {
                     puzzle_num: puzzleNum,
