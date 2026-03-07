@@ -1455,6 +1455,7 @@ function initPuzzle(puzzleNum, isArchive = false) {
     currentPuzzle.puzzleNum = puzzleNum;
     currentPuzzle.numbers = generatePuzzle(puzzleNum);
     currentPuzzle.isArchive = isArchive;
+    currentPuzzle.isSpeakeasy = false;
     currentPuzzle.date = getDateFromPuzzleNumber(puzzleNum);
 
     const history = gameState.history[puzzleNum];

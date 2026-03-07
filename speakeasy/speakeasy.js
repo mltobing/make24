@@ -886,6 +886,7 @@
                 finished = true;
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
+                if (window.currentPuzzle) window.currentPuzzle.isSpeakeasy = false;
                 // Save mid-game state
                 const elapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
                 saveGameState(puzzleNum, targetsList, [...solvedSet], currentIdx, elapsed);
@@ -935,6 +936,7 @@
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
                 clearGameState();
+                if (window.currentPuzzle) window.currentPuzzle.isSpeakeasy = false;
 
                 const totalElapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
                 const totalTimeSec = Math.round(totalElapsed / 1000);
@@ -1096,6 +1098,7 @@
         // window.currentPuzzle is the module-level variable in app.js.
         const activePuzzle = (window.currentPuzzle && window.currentPuzzle.puzzleNum > 0)
             ? window.currentPuzzle : null;
+        if (activePuzzle) activePuzzle.isSpeakeasy = true;
         const puzzleNum = activePuzzle ? activePuzzle.puzzleNum : getTodayPuzzleNum();
         const digits    = (activePuzzle && activePuzzle.numbers && activePuzzle.numbers.length === 4)
             ? [...activePuzzle.numbers]
