@@ -550,11 +550,13 @@
         if (!window.make24Db) return;
         try {
             const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
-            const deviceId = saved.deviceId;
-            if (!deviceId) return;
+            const deviceId = saved.deviceId || localStorage.getItem('make24_device_id');
+            if (!deviceId) {
+                console.warn('[Speakeasy] syncToSupabase skipped: missing device id.');
+                return;
+            }
 
-            const isPerfect = solvedList.length === targetsList.length;
-            const result = await window.make24Db.rpc('record_speakeasy_solve', {
+            const payload = {
                 p_device_id:          deviceId,
                 p_puzzle_num:         puzzleNum,
                 p_targets_total:      targetsList.length,
@@ -562,8 +564,32 @@
                 p_total_time:         totalTimeSec,
                 p_hints_used:         0,
                 p_targets_list:       targetsList,
-                p_targets_solved_list: solvedList
-            });
+                p_targets_solved_list: solvedList,
+                p_is_speakeasy:       true
+            };
+
+            let result = await window.make24Db.rpc('record_speakeasy_solve', payload);
+
+            const rawError = JSON.stringify(result?.error || {});
+            const rejectedSpeakeasyFlag = result?.error && (
+                rawError.includes('p_is_speakeasy') ||
+                rawError.includes('record_speakeasy_solve')
+            );
+
+            if (rejectedSpeakeasyFlag) {
+                console.warn('[Speakeasy] record_speakeasy_solve rejected p_is_speakeasy; retrying with legacy payload.', result.error);
+                const legacyPayload = {
+                    p_device_id:           deviceId,
+                    p_puzzle_num:          puzzleNum,
+                    p_targets_total:       targetsList.length,
+                    p_targets_solved:      solvedList.length,
+                    p_total_time:          totalTimeSec,
+                    p_hints_used:          0,
+                    p_targets_list:        targetsList,
+                    p_targets_solved_list: solvedList
+                };
+                result = await window.make24Db.rpc('record_speakeasy_solve', legacyPayload);
+            }
 
             if (result.error) {
                 console.error('[Speakeasy] record_speakeasy_solve error:', result.error);
