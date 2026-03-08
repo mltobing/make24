@@ -556,43 +556,23 @@
                 return;
             }
 
-            const payload = {
-                p_device_id:          deviceId,
-                p_puzzle_num:         puzzleNum,
-                p_targets_total:      targetsList.length,
-                p_targets_solved:     solvedList.length,
-                p_total_time:         totalTimeSec,
-                p_hints_used:         0,
-                p_targets_list:       targetsList,
-                p_targets_solved_list: solvedList,
-                p_is_speakeasy:       true
-            };
-
-            let result = await window.make24Db.rpc('record_speakeasy_solve', payload);
-
-            const rawError = JSON.stringify(result?.error || {});
-            const rejectedSpeakeasyFlag = result?.error && (
-                rawError.includes('p_is_speakeasy') ||
-                rawError.includes('record_speakeasy_solve')
-            );
-
-            if (rejectedSpeakeasyFlag) {
-                console.warn('[Speakeasy] record_speakeasy_solve rejected p_is_speakeasy; retrying with legacy payload.', result.error);
-                const legacyPayload = {
-                    p_device_id:           deviceId,
-                    p_puzzle_num:          puzzleNum,
-                    p_targets_total:       targetsList.length,
-                    p_targets_solved:      solvedList.length,
-                    p_total_time:          totalTimeSec,
-                    p_hints_used:          0,
-                    p_targets_list:        targetsList,
-                    p_targets_solved_list: solvedList
-                };
-                result = await window.make24Db.rpc('record_speakeasy_solve', legacyPayload);
-            }
+            // Route through the canonical record_solve path (same as Normal mode).
+            // record_speakeasy_solve does not write to the expected table.
+            // record_solve already accepts p_is_speakeasy for Hard Mode identification.
+            const isPerfect = solvedList.length === targetsList.length;
+            const result = await window.make24Db.rpc('record_solve', {
+                p_device_id:    deviceId,
+                p_puzzle_num:   puzzleNum,
+                p_solved:       isPerfect,
+                p_moves:        solvedList.length,
+                p_solve_time:   totalTimeSec,
+                p_operators:    [],
+                p_undos:        0,
+                p_is_speakeasy: true
+            });
 
             if (result.error) {
-                console.error('[Speakeasy] record_speakeasy_solve error:', result.error);
+                console.error('[Speakeasy] record_solve error:', result.error);
             } else {
                 console.log('[Speakeasy] synced to Supabase:', result.data);
             }
