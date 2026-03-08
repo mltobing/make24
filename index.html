@@ -209,6 +209,14 @@
                 <div class="sync-status" id="backupStatus"></div>
             </div>
 
+            <!-- D: Diagnostic -->
+            <div class="backup-section">
+                <div class="sync-label">Diagnostic</div>
+                <div class="sync-methods">
+                    <button class="email-send-btn" id="diagnosticBtn" aria-label="Run diagnostic">Storage Detective</button>
+                </div>
+            </div>
+
             <!-- C: After Hours status — injected by speakeasy.js when relevant -->
             <div id="settingsAhSection"></div>
 
@@ -245,6 +253,15 @@
     <!-- Add to Home Screen instruction (shown after tapping Add) -->
     <div class="a2hs-instruction" id="a2hsInstruction" aria-hidden="true">
         Tap <strong>Share</strong> → <strong>Add to Home Screen</strong>
+    </div>
+
+    <!-- Diagnostic overlay -->
+    <div class="modal-overlay" id="diagnosticModal">
+        <div class="modal" style="max-height:85vh;overflow-y:auto;">
+            <h2>Storage Detective</h2>
+            <div id="diagnosticContent"></div>
+            <button class="modal-close" id="closeDiagnostic" aria-label="Close">Close</button>
+        </div>
     </div>
 
     <script src="supabase-service.js"></script>
