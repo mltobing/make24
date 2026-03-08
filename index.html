@@ -7,6 +7,8 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-512.png">
     <title>Make 24</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -231,6 +233,19 @@
 
     <div class="confetti-container" id="confetti"></div>
     <canvas class="share-canvas" id="shareCanvas"></canvas>
+
+    <!-- Add to Home Screen prompt (iOS Safari only, shown once) -->
+    <div class="a2hs-prompt" id="a2hsPrompt" aria-hidden="true">
+        <span class="a2hs-text">Add Make24 to your home screen for the daily puzzle</span>
+        <div class="a2hs-actions">
+            <button class="a2hs-btn a2hs-btn-add" id="a2hsTapAdd">Add</button>
+            <button class="a2hs-btn a2hs-btn-dismiss" id="a2hsDismiss">Dismiss</button>
+        </div>
+    </div>
+    <!-- Add to Home Screen instruction (shown after tapping Add) -->
+    <div class="a2hs-instruction" id="a2hsInstruction" aria-hidden="true">
+        Tap <strong>Share</strong> → <strong>Add to Home Screen</strong>
+    </div>
 
     <script src="supabase-service.js"></script>
     <script src="app.js"></script>
