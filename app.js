@@ -3301,6 +3301,68 @@ boot();
 initShakeSetting();
 
 // ============================================================
+// ADD TO HOME SCREEN PROMPT (iOS Safari, one-time)
+// ============================================================
+(function initA2HS() {
+    const A2HS_KEY = 'make24_a2hs_dismissed';
+
+    // Only run in browser
+    if (typeof window === 'undefined') return;
+
+    // Must be iOS Safari (not Chrome or Firefox on iOS)
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+    // Already installed as standalone
+    const isStandalone = navigator.standalone === true;
+    // Already dismissed
+    const isDismissed = localStorage.getItem(A2HS_KEY) === '1';
+
+    if (!isIOS || !isSafari || isStandalone || isDismissed) return;
+
+    const prompt = document.getElementById('a2hsPrompt');
+    const instruction = document.getElementById('a2hsInstruction');
+    const addBtn = document.getElementById('a2hsTapAdd');
+    const dismissBtn = document.getElementById('a2hsDismiss');
+    if (!prompt || !instruction || !addBtn || !dismissBtn) return;
+
+    function hideAll() {
+        prompt.classList.remove('a2hs-visible');
+        prompt.setAttribute('aria-hidden', 'true');
+        instruction.classList.remove('a2hs-visible');
+        instruction.setAttribute('aria-hidden', 'true');
+        localStorage.setItem(A2HS_KEY, '1');
+    }
+
+    addBtn.addEventListener('click', () => {
+        prompt.classList.remove('a2hs-visible');
+        prompt.setAttribute('aria-hidden', 'true');
+        instruction.classList.add('a2hs-visible');
+        instruction.setAttribute('aria-hidden', 'false');
+        setTimeout(() => {
+            instruction.classList.remove('a2hs-visible');
+            instruction.setAttribute('aria-hidden', 'true');
+        }, 5000);
+        localStorage.setItem(A2HS_KEY, '1');
+    });
+
+    dismissBtn.addEventListener('click', hideAll);
+
+    // Hide when user starts interacting with the board
+    document.addEventListener('pointerdown', function onInteract(e) {
+        if (e.target.closest('.board-cell, .slot, #gameBoard')) {
+            hideAll();
+            document.removeEventListener('pointerdown', onInteract);
+        }
+    }, { passive: true });
+
+    // Show with a short delay so it doesn't block page render
+    setTimeout(() => {
+        prompt.classList.add('a2hs-visible');
+        prompt.setAttribute('aria-hidden', 'false');
+    }, 2000);
+})();
+
+// ============================================================
 // EXPORTS FOR TESTING (Node.js only)
 // ============================================================
 if (typeof module !== 'undefined' && module.exports) {

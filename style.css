@@ -1631,3 +1631,86 @@ body {
         animation-duration: 0.01ms !important;
     }
 }
+
+/* ============================================================
+   ADD TO HOME SCREEN PROMPT (iOS Safari, shown once)
+   ============================================================ */
+.a2hs-prompt {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    z-index: 500;
+    width: min(88vw, 360px);
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+    pointer-events: none;
+}
+.a2hs-prompt.a2hs-visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+.a2hs-text {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    line-height: 1.4;
+}
+.a2hs-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.a2hs-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.a2hs-btn-add {
+    background: #22d3ee;
+    color: #0f172a;
+}
+.a2hs-btn-add:hover { background: #0891b2; }
+.a2hs-btn-dismiss {
+    background: transparent;
+    color: #64748b;
+    border: 1px solid #334155;
+}
+.a2hs-btn-dismiss:hover { color: #94a3b8; border-color: #94a3b8; }
+
+.a2hs-instruction {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    z-index: 500;
+    width: min(88vw, 360px);
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    text-align: center;
+    opacity: 0;
+    transition: transform 0.35s ease, opacity 0.35s ease;
+    pointer-events: none;
+}
+.a2hs-instruction.a2hs-visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
