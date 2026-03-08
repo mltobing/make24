@@ -550,7 +550,8 @@
         if (!window.make24Db) return;
         try {
             const saved = JSON.parse(localStorage.getItem('make24_v5') || '{}');
-            const deviceId = saved.deviceId || localStorage.getItem('make24_device_id');
+            const deviceIdKey = 'make24_device_id_' + window.location.hostname;
+            const deviceId = saved.deviceId || localStorage.getItem(deviceIdKey) || localStorage.getItem('make24_device_id');
             if (!deviceId) {
                 console.warn('[Speakeasy] syncToSupabase skipped: missing device id.');
                 return;
@@ -560,6 +561,7 @@
             // record_speakeasy_solve does not write to the expected table.
             // record_solve already accepts p_is_speakeasy for Hard Mode identification.
             const isPerfect = solvedList.length === targetsList.length;
+            console.log('[Speakeasy] calling record_solve with p_is_speakeasy: true, deviceId:', deviceId, 'puzzleNum:', puzzleNum);
             const result = await window.make24Db.rpc('record_solve', {
                 p_device_id:    deviceId,
                 p_puzzle_num:   puzzleNum,

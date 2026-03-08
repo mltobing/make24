@@ -65,6 +65,9 @@ const TARGET_NUMBER = 24;
 const FLOAT_EPSILON = 0.0001;
 const ENABLE_COMPARISON_LINE = true;
 const MIN_COMPARISON_SAMPLE  = 10;
+// Device-ID localStorage key, scoped to hostname so that different sites
+// (e.g. make24.app vs kapework.com) on a shared origin never collide.
+const DEVICE_ID_KEY = 'make24_device_id_' + window.location.hostname;
 
 // ============================================================
 // GAME STATE
@@ -765,7 +768,7 @@ async function ensureCanonicalDeviceId() {
                     if (rows && rows.length > 0 && rows[0].device_id) {
                         const canonicalId = rows[0].device_id;
                         if (canonicalId !== localId) {
-                            localStorage.setItem('make24_device_id', canonicalId);
+                            localStorage.setItem(DEVICE_ID_KEY, canonicalId);
                             gameState.deviceId = canonicalId;
                             saveState();
                             console.log('[SYNC DEBUG] Adopted canonical device ID from user_devices:', canonicalId, '(was:', localId, ')');
@@ -784,7 +787,7 @@ async function ensureCanonicalDeviceId() {
         console.log('[SYNC DEBUG] canonicalId:', canonicalId, 'localId:', localId, 'match:', canonicalId === localId);
         if (canonicalId && canonicalId !== localId) {
             // Server returned a different canonical ID — adopt it
-            localStorage.setItem('make24_device_id', canonicalId);
+            localStorage.setItem(DEVICE_ID_KEY, canonicalId);
             gameState.deviceId = canonicalId;
             saveState();
             console.log('[SYNC DEBUG] Adopted canonical device ID:', canonicalId, '(was:', localId, ')');
@@ -848,7 +851,7 @@ async function syncFromSupabase() {
                     // so that future syncs and trackPlay calls use the right ID
                     if (player.device_id && player.device_id !== gameState.deviceId) {
                         console.log('[SYNC DEBUG] syncFromSupabase: adopting canonical device_id from player row:', player.device_id, '(was:', gameState.deviceId, ')');
-                        localStorage.setItem('make24_device_id', player.device_id);
+                        localStorage.setItem(DEVICE_ID_KEY, player.device_id);
                         gameState.deviceId = player.device_id;
                         saveState();
                     }
@@ -1358,10 +1361,18 @@ function generatePuzzle(puzzleNum) {
 }
 
 function getDeviceId() {
-    let id = localStorage.getItem('make24_device_id');
+    let id = localStorage.getItem(DEVICE_ID_KEY);
     if (!id) {
-        id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-        localStorage.setItem('make24_device_id', id);
+        // Migrate from the old unscoped key if present on this origin
+        const legacyId = localStorage.getItem('make24_device_id');
+        if (legacyId) {
+            id = legacyId;
+            localStorage.setItem(DEVICE_ID_KEY, id);
+            localStorage.removeItem('make24_device_id');
+        } else {
+            id = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+            localStorage.setItem(DEVICE_ID_KEY, id);
+        }
     }
     return id;
 }
