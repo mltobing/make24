@@ -1714,3 +1714,78 @@ body {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
 }
+
+/* Diagnostic styles */
+.diag-section { margin-bottom: 16px; }
+.diag-section-title {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+.diag-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.diag-row:last-child { border-bottom: none; }
+.diag-label { font-size: 13px; color: #999; }
+.diag-value {
+    font-size: 13px;
+    color: #fff;
+    font-weight: 600;
+    text-align: right;
+    max-width: 60%;
+    word-break: break-all;
+}
+.diag-value.good { color: #22c55e; }
+.diag-value.warn { color: #f59e0b; }
+.diag-value.bad  { color: #ef4444; }
+.diag-value.muted { color: #666; font-weight: 400; }
+.diag-mono {
+    font-family: monospace;
+    font-size: 11px;
+    background: rgba(255,255,255,0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.diag-fingerprint {
+    background: rgba(255,255,255,0.04);
+    border: 1px dashed rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+    text-align: center;
+}
+.diag-fingerprint code {
+    display: block;
+    font-size: 10px;
+    color: #f59e0b;
+    word-break: break-all;
+    margin-top: 8px;
+    text-align: left;
+    white-space: pre-wrap;
+    user-select: all;
+}
+.diag-copy-btn {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.diag-copy-btn:active { background: rgba(255,255,255,0.2); }
+.diag-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.diag-badge-pwa     { background: #1e3a5f; color: #60a5fa; }
+.diag-badge-browser { background: #3b1f0b; color: #fb923c; }

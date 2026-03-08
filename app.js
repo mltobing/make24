@@ -3078,6 +3078,185 @@ document.getElementById('settingsModal').addEventListener('click', (e) => {
 });
 
 // ============================================================
+// DIAGNOSTIC (Storage Detective)
+// ============================================================
+function runDiagnostic() {
+    const content = document.getElementById('diagnosticContent');
+    if (!content) return;
+
+    // Detect display mode
+    let mode = 'Browser tab';
+    let badgeClass = 'diag-badge-browser';
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+        mode = 'Standalone PWA (home screen)';
+        badgeClass = 'diag-badge-pwa';
+    }
+
+    // Find make24 state — check common key names
+    const possibleKeys = ['make24_v5', 'make24_v4', 'make24_v3', 'make24_v2', 'make24_state', 'make24'];
+    let stateKey = null;
+    let stateData = null;
+    for (const k of possibleKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+            stateKey = k;
+            try { stateData = JSON.parse(raw); } catch(e) { stateData = null; }
+            break;
+        }
+    }
+    // Fallback scan
+    if (!stateKey) {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.toLowerCase().includes('make24')) {
+                stateKey = k;
+                try { stateData = JSON.parse(localStorage.getItem(k)); } catch(e) {}
+                break;
+            }
+        }
+    }
+
+    // Auth state
+    let authFound = false;
+    let authEmail = '—';
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.includes('supabase') && k.includes('auth')) {
+            authFound = true;
+            try {
+                const d = JSON.parse(localStorage.getItem(k));
+                if (d?.user?.email) authEmail = d.user.email;
+                else if (d?.currentSession?.user?.email) authEmail = d.currentSession.user.email;
+            } catch(e) {}
+        }
+    }
+
+    // All keys
+    const allKeys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k);
+        allKeys.push({ key: k, size: v ? v.length : 0 });
+    }
+    allKeys.sort((a, b) => a.key.localeCompare(b.key));
+
+    // History count
+    let historyCount = 0;
+    if (stateData?.history && typeof stateData.history === 'object') {
+        historyCount = Object.keys(stateData.history).length;
+    }
+
+    // Speakeasy detection
+    let speakeasy = 'not found in state';
+    if (stateData) {
+        if (stateData.speakeasyUnlocked !== undefined) speakeasy = String(stateData.speakeasyUnlocked);
+        else if (stateData.isSpeakeasy !== undefined) speakeasy = String(stateData.isSpeakeasy);
+        else if (stateData.speakeasy !== undefined) speakeasy = String(stateData.speakeasy);
+        else if (stateData.afterHours !== undefined) speakeasy = 'afterHours: ' + String(stateData.afterHours);
+    }
+
+    // Live values from in-memory gameState (if available)
+    let liveDeviceId = '—';
+    let liveStreak = '—';
+    if (typeof gameState !== 'undefined') {
+        liveDeviceId = gameState.deviceId || '—';
+        liveStreak = gameState.streak !== undefined ? gameState.streak : '—';
+    }
+
+    // Build fingerprint object
+    const fp = {
+        mode,
+        url: window.location.href,
+        storageKey: stateKey || 'none',
+        deviceId: stateData?.deviceId || 'none',
+        liveDeviceId,
+        streak: stateData?.streak !== undefined ? stateData.streak : null,
+        liveStreak,
+        maxStreak: stateData?.maxStreak !== undefined ? stateData.maxStreak : null,
+        historyCount,
+        lastPlayed: stateData?.lastPlayedDate || 'none',
+        totalKeys: localStorage.length,
+        ts: new Date().toISOString()
+    };
+
+    const row = (label, value, cls) =>
+        `<div class="diag-row"><span class="diag-label">${label}</span><span class="diag-value ${cls || ''}">${value}</span></div>`;
+
+    let html = '';
+
+    html += `<div class="diag-section">`;
+    html += `<div class="diag-section-title">Browser Context</div>`;
+    html += row('Mode', `<span class="diag-badge ${badgeClass}">${mode}</span>`);
+    html += row('URL', window.location.href, 'muted');
+    html += `</div>`;
+
+    html += `<div class="diag-section">`;
+    html += `<div class="diag-section-title">Game State</div>`;
+    html += row('Storage key', stateKey ? `<span class="good">${stateKey}</span>` : '<span class="bad">Not found</span>');
+    html += row('Device ID (stored)', stateData?.deviceId ? `<span class="diag-mono">${stateData.deviceId}</span>` : '—');
+    html += row('Device ID (live)', `<span class="diag-mono">${liveDeviceId}</span>`);
+    html += row('Current streak', stateData?.streak !== undefined ? stateData.streak : '—', stateData?.streak > 0 ? 'good' : 'warn');
+    html += row('Live streak', String(liveStreak), '');
+    html += row('Max streak', stateData?.maxStreak !== undefined ? stateData.maxStreak : '—');
+    html += row('Games in history', historyCount);
+    html += row('Last played', stateData?.lastPlayedDate || '—');
+    html += row('Freezes', stateData?.freezes !== undefined ? stateData.freezes : '—');
+    html += row('Speakeasy', speakeasy);
+    html += `</div>`;
+
+    html += `<div class="diag-section">`;
+    html += `<div class="diag-section-title">Auth</div>`;
+    html += row('Supabase session', authFound ? '<span class="good">Found</span>' : '<span class="muted">None</span>');
+    html += row('Email', authEmail);
+    html += `</div>`;
+
+    html += `<div class="diag-section">`;
+    html += `<div class="diag-section-title">All localStorage Keys (${allKeys.length})</div>`;
+    for (const k of allKeys) {
+        const sizeLabel = k.size > 1024 ? (k.size / 1024).toFixed(1) + ' KB' : k.size + ' B';
+        html += row(k.key, sizeLabel, 'muted');
+    }
+    html += `</div>`;
+
+    const fpStr = JSON.stringify(fp, null, 2);
+    html += `<div class="diag-fingerprint">`;
+    html += `<p style="font-size:12px;color:#888;margin:0 0 8px;">Copy from both contexts to compare</p>`;
+    html += `<button class="diag-copy-btn" id="diagCopyBtn">Copy Fingerprint</button>`;
+    html += `<code>${fpStr.replace(/</g, '&lt;')}</code>`;
+    html += `</div>`;
+
+    content.innerHTML = html;
+
+    document.getElementById('diagCopyBtn')?.addEventListener('click', () => {
+        navigator.clipboard?.writeText(fpStr).then(() => {
+            const btn = document.getElementById('diagCopyBtn');
+            if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy Fingerprint', 2000); }
+        }).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = fpStr;
+            ta.style.cssText = 'position:fixed;left:-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            const btn = document.getElementById('diagCopyBtn');
+            if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy Fingerprint', 2000); }
+        });
+    });
+}
+
+document.getElementById('diagnosticBtn')?.addEventListener('click', () => {
+    runDiagnostic();
+    document.getElementById('diagnosticModal')?.classList.add('show');
+});
+document.getElementById('closeDiagnostic')?.addEventListener('click', () => {
+    document.getElementById('diagnosticModal')?.classList.remove('show');
+});
+document.getElementById('diagnosticModal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+});
+
+// ============================================================
 // GUIDED TUTORIAL (first-time users)
 // ============================================================
 let tutorialActive = false;
