@@ -611,40 +611,53 @@
         let demoRound      = createRound([...digits]);
         const idToCardIdx  = { 0: 0, 1: 1, 2: 2, 3: 3 };
         let stepIdx        = 0;
+        const opDisplay    = miniEl.querySelector('.spk-sol-op-display');
+
+        // Suppress the interactive operator overlay during demo
+        const opOverlay = miniEl.querySelector('.spk-op-overlay');
+        if (opOverlay) opOverlay.style.display = 'none';
+
         renderBoard(miniEl, demoRound);
 
-        // Clear any active-op highlights
-        function clearOpHighlight() {
-            const btns = miniEl.querySelectorAll('.op-btn');
-            btns.forEach(b => b.classList.remove('op-btn-active'));
+        function showOp(op) {
+            if (!opDisplay) return;
+            opDisplay.textContent = OP_STR[op] || op;
+            opDisplay.classList.add('visible');
+        }
+        function hideOp() {
+            if (!opDisplay) return;
+            opDisplay.classList.remove('visible');
         }
 
         function runStep() {
-            if (stepIdx >= steps.length) { clearOpHighlight(); onDone(); return; }
+            if (stepIdx >= steps.length) { hideOp(); onDone(); return; }
             const step = steps[stepIdx++];
             const aIdx = idToCardIdx[step.aId];
             const bIdx = idToCardIdx[step.bId];
 
+            // 1. Highlight the two selected cards
             demoRound = roundSelectTwo(demoRound, aIdx, bIdx);
             renderBoard(miniEl, demoRound);
 
-            // Highlight the operator that will be used
-            clearOpHighlight();
-            const opBtn = miniEl.querySelector(`.op-btn[data-op="${step.op}"]`);
-            if (opBtn) opBtn.classList.add('op-btn-active');
-
+            // 2. Show the operator symbol in center after a short pause
             const t1 = setTimeout(() => {
-                clearOpHighlight();
+                showOp(step.op);
+            }, 350);
+            timeouts.push(t1);
+
+            // 3. Apply the operation and hide the operator
+            const t2 = setTimeout(() => {
+                hideOp();
                 const next = roundApplyOp(demoRound, step.op);
                 if (!next) { onDone(); return; }
                 demoRound = next;
                 idToCardIdx[step.resultId] = demoRound.cards.length - 1;
                 renderBoard(miniEl, demoRound);
 
-                const t2 = setTimeout(runStep, 500);
-                timeouts.push(t2);
+                const t3 = setTimeout(runStep, 500);
+                timeouts.push(t3);
             }, STEP_MS);
-            timeouts.push(t1);
+            timeouts.push(t2);
         }
 
         const t0 = setTimeout(runStep, 300);
@@ -667,16 +680,9 @@
     <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
       <div class="spk-slot spk-slot-left"></div>
+      <div class="spk-sol-op-display"></div>
       <div class="spk-slot spk-slot-right"></div>
       <div class="spk-slot spk-slot-bottom"></div>
-    </div>
-    <div class="spk-op-overlay">
-      <div class="operators-grid">
-        <button class="op-btn" data-op="+">+</button>
-        <button class="op-btn" data-op="-">\u2212</button>
-        <button class="op-btn" data-op="*">\u00d7</button>
-        <button class="op-btn" data-op="/">\u00f7</button>
-      </div>
     </div>
   </div>
   <div class="spk-sol-expr">${expr}</div>
@@ -715,6 +721,9 @@
                 demoRunning          = false;
                 watchBtn.disabled    = false;
                 watchBtn.textContent = 'Watch again';
+                // Hide the board after a brief pause so user sees the final state
+                const tHide = setTimeout(() => { boardEl.style.display = 'none'; }, 1200);
+                demoTimeouts.push(tHide);
             });
         });
 

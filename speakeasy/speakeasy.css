@@ -330,12 +330,21 @@
     z-index: 10;
 }
 .spk-op-overlay.spk-op-show { display: flex; }
-.op-btn.op-btn-active {
-    background: #22d3ee;
-    color: #0f172a;
-    transform: scale(1.15);
-    box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+
+/* Inline operator display for solution replay (centered in diamond grid) */
+.spk-sol-op-display {
+    grid-column: 2; grid-row: 2;
+    font-family: 'Space Mono', monospace;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #22d3ee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
 }
+.spk-sol-op-display.visible { opacity: 1; }
 
 /* ---------------------------------------------------------------
    RESULT SCREEN  (end of game — completion or game over)
