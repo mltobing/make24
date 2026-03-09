@@ -651,15 +651,15 @@
         modal.innerHTML = `
 <div class="spk-sol-card">
   <div class="spk-sol-heading">How to make <span class="spk-sol-n">${n}</span></div>
-  <div class="spk-sol-expr">${expr}</div>
-  <div class="spk-mini-board">
-    <div class="spk-mini-diamond-grid">
+  <div class="spk-sol-board">
+    <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
       <div class="spk-slot spk-slot-left"></div>
       <div class="spk-slot spk-slot-right"></div>
       <div class="spk-slot spk-slot-bottom"></div>
     </div>
   </div>
+  <div class="spk-sol-expr">${expr}</div>
   <div class="spk-sol-actions">
     <button class="spk-btn spk-btn-primary spk-sol-watch">Watch</button>
     <button class="spk-btn spk-btn-ghost   spk-sol-close">Close</button>
@@ -668,14 +668,14 @@
 
         gameScreen.appendChild(modal);
 
-        const miniEl   = modal.querySelector('.spk-mini-board');
+        const boardEl  = modal.querySelector('.spk-sol-board');
         const watchBtn = modal.querySelector('.spk-sol-watch');
         const closeBtn = modal.querySelector('.spk-sol-close');
 
         let demoTimeouts = [];
         let demoRunning  = false;
 
-        renderBoard(miniEl, createRound([...digits]));
+        renderBoard(boardEl, createRound([...digits]));
 
         function stopDemo() {
             demoTimeouts.forEach(clearTimeout);
@@ -691,8 +691,8 @@
             watchBtn.disabled    = true;
             watchBtn.textContent = 'Playing\u2026';
             demoTimeouts         = [];
-            renderBoard(miniEl, createRound([...digits]));
-            playDemoAnimation(miniEl, digits, steps, demoTimeouts, () => {
+            renderBoard(boardEl, createRound([...digits]));
+            playDemoAnimation(boardEl, digits, steps, demoTimeouts, () => {
                 demoRunning          = false;
                 watchBtn.disabled    = false;
                 watchBtn.textContent = 'Watch again';
@@ -736,6 +736,12 @@
         const solved    = solvedSet.size;
         const isPerfect = solved === total;
 
+        // Title classification
+        let heading, headingClass;
+        if (isPerfect)      { heading = 'Perfect';    headingClass = 'spk-heading-perfect'; }
+        else if (solved > 0) { heading = 'Time\u2019s up'; headingClass = 'spk-heading-partial'; }
+        else                 { heading = 'Time\u2019s up'; headingClass = 'spk-heading-none'; }
+
         const chipsHTML = targetsList.map(n => {
             if (solvedSet.has(n)) {
                 return `<span class="spk-chip spk-chip-found">${n}</span>`;
@@ -746,18 +752,29 @@
                          title="${hasSol ? 'Tap to see solution' : ''}">${n}</span>`;
         }).join('');
 
-        const shareEmoji = targetsList.map(n => solvedSet.has(n) ? '\uD83D\uDFE9' : '\u2B1C').join('');
+        // Streak from main game state
+        const streak = (window.gameState && window.gameState.streak) || 0;
+        const dateStr = (typeof formatPuzzleDateLong === 'function') ? formatPuzzleDateLong(puzzleNum) : '';
 
         screen.innerHTML = `
 <div class="spk-result${isPerfect ? ' spk-result-perfect' : ''}">
-  <div class="spk-result-icon">${isPerfect ? '\u2B50' : '\u23F1'}</div>
-  <div class="spk-result-heading">${isPerfect ? 'Perfect!' : 'Time\u2019s up'}</div>
-  <div class="spk-result-stat">${solved}/${total}</div>
-  ${!isPerfect && solved > 0 ? '<div class="spk-result-hint">Tap a missed target to see a solution.</div>' : ''}
+  <div class="spk-result-badge ${headingClass}">${heading}</div>
+  ${dateStr ? `<div class="spk-result-date">${dateStr}</div>` : ''}
+  <div class="spk-result-stats-row">
+    <div class="spk-result-stat-item">
+      <span class="spk-result-stat-value">${solved}/${total}</span>
+      <span class="spk-result-stat-label">solved</span>
+    </div>
+    ${streak > 0 ? `<div class="spk-result-stat-item">
+      <span class="spk-result-stat-value">${streak}</span>
+      <span class="spk-result-stat-label">streak</span>
+    </div>` : ''}
+  </div>
+  ${!isPerfect && solved > 0 ? '<div class="spk-result-hint">Tap a missed number to see its solution.</div>' : ''}
   <div class="spk-result-book" id="spkResultBook">${chipsHTML}</div>
   <div class="spk-result-actions">
+    <button class="spk-btn spk-btn-primary" id="spkBackBtn">Close</button>
     <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
-    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Close</button>
   </div>
 </div>`;
 
@@ -894,6 +911,7 @@
                 finished = true;
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
+                if (_removeKbHandler) _removeKbHandler();
                 if (window.currentPuzzle) window.currentPuzzle.isSpeakeasy = false;
                 // Save mid-game state
                 const elapsed = totalElapsedBefore + (timerStart ? Date.now() - timerStart : 0);
@@ -943,6 +961,7 @@
                 finished = true;
                 cancelAnimationFrame(rafId);
                 clearTimeout(fbTimer);
+                if (_removeKbHandler) _removeKbHandler();
                 clearGameState();
                 if (window.currentPuzzle) window.currentPuzzle.isSpeakeasy = false;
 
@@ -1029,6 +1048,156 @@
                     }
                 }
             );
+
+            // ── Keyboard shortcuts (mirrors app.js keyboard handler) ──
+            let spkKeyBuffer = '';
+            let spkKeyTimeout = null;
+
+            function spkClearBuffer() {
+                spkKeyBuffer = '';
+                if (spkKeyTimeout) { clearTimeout(spkKeyTimeout); spkKeyTimeout = null; }
+            }
+
+            function spkGetActiveTiles() {
+                return _round.cards.filter(c => !c.used);
+            }
+
+            function spkFindCardIndex(value) {
+                for (let i = 0; i < _round.cards.length; i++) {
+                    if (!_round.cards[i].used && _round.cards[i].value === value && !_round.selected.includes(i)) return i;
+                }
+                for (let i = 0; i < _round.cards.length; i++) {
+                    if (!_round.cards[i].used && _round.cards[i].value === value) return i;
+                }
+                return -1;
+            }
+
+            function spkCommitBuffer() {
+                spkKeyTimeout = null;
+                const num = parseInt(spkKeyBuffer, 10);
+                spkKeyBuffer = '';
+                if (isNaN(num)) return;
+                const idx = spkFindCardIndex(num);
+                if (idx !== -1) {
+                    _round = roundSelectCard(_round, idx);
+                    round = _round;
+                    renderBoard(el, _round);
+                    if (_round.selected.length === 2) {
+                        // Show operators overlay
+                        const opOverlay = el.querySelector('.spk-op-overlay');
+                        if (opOverlay) opOverlay.classList.add('spk-op-show');
+                    }
+                }
+            }
+
+            function spkHandleKeydown(e) {
+                if (finished) return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                // Check for solution modal open
+                if (el.querySelector('.spk-solution-modal')) return;
+
+                const key = e.key;
+
+                // Digit keys
+                if (key >= '0' && key <= '9') {
+                    e.preventDefault();
+                    spkKeyBuffer += key;
+                    if (spkKeyTimeout) { clearTimeout(spkKeyTimeout); spkKeyTimeout = null; }
+
+                    const activeTiles = spkGetActiveTiles();
+                    const num = parseInt(spkKeyBuffer, 10);
+                    const hasExact = activeTiles.some(t => t.value === num);
+                    const hasLonger = activeTiles.some(t => {
+                        const vs = String(t.value);
+                        return vs.startsWith(spkKeyBuffer) && vs.length > spkKeyBuffer.length;
+                    });
+
+                    if (hasExact && !hasLonger) {
+                        spkKeyBuffer = '';
+                        const idx = spkFindCardIndex(num);
+                        if (idx !== -1) {
+                            _round = roundSelectCard(_round, idx);
+                            round = _round;
+                            renderBoard(el, _round);
+                            if (_round.selected.length === 2) {
+                                const opOverlay = el.querySelector('.spk-op-overlay');
+                                if (opOverlay) opOverlay.classList.add('spk-op-show');
+                            }
+                        }
+                    } else if (hasExact || hasLonger) {
+                        spkKeyTimeout = setTimeout(spkCommitBuffer, 600);
+                    } else {
+                        spkKeyBuffer = '';
+                    }
+                    return;
+                }
+
+                // Operator keys
+                const opMap = { '+': '+', '-': '-', '*': '*', 'x': '*', 'X': '*', '/': '/' };
+                if (opMap[key]) {
+                    e.preventDefault();
+                    if (spkKeyBuffer) { if (spkKeyTimeout) clearTimeout(spkKeyTimeout); spkCommitBuffer(); }
+                    if (_round.selected.length === 2) {
+                        const next = roundApplyOp(_round, opMap[key]);
+                        if (next) {
+                            _round = next;
+                            round = _round;
+                            renderBoard(el, _round);
+                            if (roundRemaining(next).length === 1) {
+                                // Trigger resolve check (same as wireArena op handler)
+                                const val = roundGetValue(next);
+                                const currentTarget = targetsList[currentIdx];
+                                if (val !== null && Number.isInteger(val) && val === currentTarget) {
+                                    solvedSet.add(val);
+                                    showFb('\u2713 ' + val, 'new');
+                                    progressEl.textContent = `${solvedSet.size}/${totalTargets}`;
+                                    renderChips(chipsRow, targetsList, solvedSet, currentIdx);
+                                    const elapsed = totalElapsedBefore + (Date.now() - timerStart);
+                                    saveGameState(puzzleNum, targetsList, [...solvedSet], currentIdx, elapsed);
+                                    setTimeout(() => { if (!finished) advanceTarget(); }, RESET_MS);
+                                } else if (val !== null && Number.isInteger(val) && solutionsByTarget.has(val) && val !== currentTarget) {
+                                    showFb('Need ' + currentTarget + ', not ' + val, 'dupe');
+                                    setTimeout(() => { if (!finished) { _round = createRound([...digits]); round = _round; renderBoard(el, _round); } }, RESET_MS);
+                                } else if (val !== null && !Number.isInteger(val)) {
+                                    showFb('Not an integer', 'bad');
+                                    setTimeout(() => { if (!finished) { _round = createRound([...digits]); round = _round; renderBoard(el, _round); } }, RESET_MS);
+                                } else {
+                                    showFb(val + ' \u2260 ' + currentTarget, 'bad');
+                                    setTimeout(() => { if (!finished) { _round = createRound([...digits]); round = _round; renderBoard(el, _round); } }, RESET_MS);
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // Undo
+                if (key === 'Backspace' || key === 'z' || key === 'Z') {
+                    e.preventDefault();
+                    spkClearBuffer();
+                    _round = roundUndo(_round);
+                    round = _round;
+                    renderBoard(el, _round);
+                    return;
+                }
+
+                // Escape — deselect
+                if (key === 'Escape') {
+                    spkClearBuffer();
+                    _round = { ..._round, selected: [] };
+                    round = _round;
+                    renderBoard(el, _round);
+                    return;
+                }
+            }
+
+            document.addEventListener('keydown', spkHandleKeydown);
+
+            // Store cleanup ref so finishGame / back can remove it
+            const _removeKbHandler = () => {
+                document.removeEventListener('keydown', spkHandleKeydown);
+                spkClearBuffer();
+            };
 
             // Render initial board and start timer
             requestAnimationFrame(() => {

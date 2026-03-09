@@ -346,6 +346,49 @@
     overflow-y: auto;
     animation: spk-fade-in 0.3s ease-out;
 }
+/* Badge / heading classification */
+.spk-result-badge {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+.spk-heading-perfect { color: #fbbf24; }
+.spk-heading-partial { color: #10b981; }
+.spk-heading-none    { color: #94a3b8; }
+
+.spk-result-date {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+/* Stats row — mirrors victory-stats from main game */
+.spk-result-stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 8px;
+}
+.spk-result-stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.spk-result-stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+.spk-result-stat-label {
+    font-size: 0.6875rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Legacy aliases kept for backwards compat */
 .spk-result-icon    { font-size: 2.75rem; line-height: 1; margin-bottom: 2px; }
 .spk-result-heading { font-size: 1.375rem; font-weight: 700; color: #f1f5f9; }
 .spk-result-stat    { font-family: 'Space Mono', monospace; font-size: 1.125rem; color: #22d3ee; font-weight: 700; }
@@ -391,19 +434,21 @@
 
 /* Result action buttons */
 .spk-result-actions {
-    display: flex; flex-direction: column;
-    gap: 10px; width: 100%; max-width: 240px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%; max-width: 280px;
     margin-top: 12px;
 }
 .spk-btn {
-    border-radius: 12px;
-    font-size: 0.9375rem; font-weight: 600;
-    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.875rem; font-weight: 600;
+    padding: 10px 20px;
     cursor: pointer; border: none;
     transition: background 0.15s, transform 0.1s;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-    width: 100%;
 }
 .spk-btn:active { transform: scale(0.97); }
 .spk-btn-primary { background: #22d3ee; color: #0f172a; }
@@ -431,6 +476,10 @@
     font-size: 1.75rem;
     color: #22d3ee;
     letter-spacing: 0.02em;
+}
+.spk-result.spk-result-perfect .spk-result-badge {
+    font-size: 1.25rem;
+    color: #fbbf24;
 }
 
 .spk-result.spk-result-perfect .spk-result-stat {
@@ -490,7 +539,7 @@
     border-radius: 18px;
     padding: 24px 20px 20px;
     width: 100%;
-    max-width: 320px;
+    max-width: 360px;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -523,32 +572,18 @@
 .spk-sol-close { width: 100%; padding: 11px 20px; }
 
 /* ---------------------------------------------------------------
-   MINI BOARD  (used for demo animation inside the solution modal)
-   Identical grid structure to the main diamond, scaled to 200×200.
-   The .card class from style.css still applies; we constrain its size.
+   SOLUTION BOARD  (full-size replay inside the solution modal)
+   Reuses the main diamond grid at a comfortable size.
    --------------------------------------------------------------- */
-.spk-mini-board {
-    width: 200px;
-    height: 200px;
+.spk-sol-board {
+    width: min(280px, 70vw);
+    height: min(280px, 70vw);
     position: relative;
     flex-shrink: 0;
 }
-.spk-mini-diamond-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    grid-template-rows: 1fr 1fr 1fr;
-    gap: 8px;
-    width: 200px;
-    height: 200px;
-    position: relative;
-    z-index: 2;
-}
-/* Shrink cards to fit the mini grid cells (~60×60 px) */
-.spk-mini-diamond-grid .card {
-    width: 56px;
-    height: 56px;
-    font-size: 1rem;
-    border-radius: 12px;
+.spk-sol-board .spk-diamond-grid {
+    width: 100%;
+    height: 100%;
 }
 
 /* ---------------------------------------------------------------
