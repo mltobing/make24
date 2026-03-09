@@ -3554,6 +3554,162 @@ initShakeSetting();
 })();
 
 // ============================================================
+// KEYBOARD SHORTCUTS (desktop play)
+// ============================================================
+(function initKeyboardHandler() {
+    let keyBuffer = '';
+    let keyBufferTimeout = null;
+
+    const MODAL_IDS = [
+        'settingsModal', 'calendarModal', 'diagnosticModal',
+        'successMessage', 'failMessage', 'archiveModal',
+        'detailsModal', 'replayOverlay'
+    ];
+
+    function isModalOpen() {
+        return MODAL_IDS.some(id => {
+            const el = document.getElementById(id);
+            return el && el.classList.contains('show');
+        });
+    }
+
+    function clearBuffer() {
+        keyBuffer = '';
+        if (keyBufferTimeout) {
+            clearTimeout(keyBufferTimeout);
+            keyBufferTimeout = null;
+        }
+    }
+
+    function getActiveTiles() {
+        return playState.cards
+            .map((c, i) => ({ value: c.value, index: i, used: c.used }))
+            .filter(t => !t.used);
+    }
+
+    function findTileIndex(value) {
+        // Find the first unselected, non-used card with the given value
+        for (let i = 0; i < playState.cards.length; i++) {
+            if (!playState.cards[i].used &&
+                playState.cards[i].value === value &&
+                !playState.selected.includes(i)) {
+                return i;
+            }
+        }
+        // If all matching tiles are already selected, allow re-selecting (deselect)
+        for (let i = 0; i < playState.cards.length; i++) {
+            if (!playState.cards[i].used && playState.cards[i].value === value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function commitBuffer() {
+        keyBufferTimeout = null;
+        const num = parseInt(keyBuffer, 10);
+        keyBuffer = '';
+        if (isNaN(num)) return;
+        const idx = findTileIndex(num);
+        if (idx !== -1) selectCard(idx);
+    }
+
+    function hasLongerPrefixMatch(buf, activeTiles) {
+        // Check if any active tile's string value starts with buf and is longer
+        return activeTiles.some(t => {
+            const vs = String(t.value);
+            return vs.startsWith(buf) && vs.length > buf.length;
+        });
+    }
+
+    function handleDigit(digit) {
+        keyBuffer += digit;
+        if (keyBufferTimeout) {
+            clearTimeout(keyBufferTimeout);
+            keyBufferTimeout = null;
+        }
+
+        const activeTiles = getActiveTiles();
+        const num = parseInt(keyBuffer, 10);
+        const hasExact = activeTiles.some(t => t.value === num);
+        const hasLonger = hasLongerPrefixMatch(keyBuffer, activeTiles);
+
+        if (hasExact && !hasLonger) {
+            // Only exact match, no ambiguity — select immediately
+            keyBuffer = '';
+            const idx = findTileIndex(num);
+            if (idx !== -1) selectCard(idx);
+        } else if (hasExact || hasLonger) {
+            // Ambiguous or partial — wait for more digits
+            keyBufferTimeout = setTimeout(commitBuffer, 600);
+        } else {
+            // No match at all — discard
+            keyBuffer = '';
+        }
+    }
+
+    const OP_KEYS = {
+        '+': '+',
+        '-': '-',
+        '*': '*',
+        'x': '*',
+        '/': '/'
+    };
+
+    document.addEventListener('keydown', function(e) {
+        // Don't interfere with browser shortcuts
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        // Don't process game keys when a modal is open
+        if (isModalOpen()) return;
+
+        // Don't process game keys when the game is completed
+        if (playState.completed) return;
+
+        const key = e.key;
+
+        // Digit keys
+        if (key >= '0' && key <= '9') {
+            e.preventDefault();
+            handleDigit(key);
+            return;
+        }
+
+        // Operator keys
+        const op = OP_KEYS[key] || (key === 'X' ? '*' : null);
+        if (op) {
+            e.preventDefault();
+            // Commit any pending buffer first
+            if (keyBuffer) {
+                if (keyBufferTimeout) clearTimeout(keyBufferTimeout);
+                commitBuffer();
+            }
+            if (playState.selected.length === 2) {
+                applyOperation(op);
+            }
+            return;
+        }
+
+        // Undo
+        if (key === 'Backspace' || key === 'z' || key === 'Z') {
+            e.preventDefault();
+            clearBuffer();
+            undo();
+            return;
+        }
+
+        // Escape — deselect all
+        if (key === 'Escape') {
+            clearBuffer();
+            playState.selected = [];
+            hideOperators();
+            renderCards();
+            return;
+        }
+    });
+})();
+
+// ============================================================
 // EXPORTS FOR TESTING (Node.js only)
 // ============================================================
 if (typeof module !== 'undefined' && module.exports) {
