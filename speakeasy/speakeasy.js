@@ -613,8 +613,14 @@
         let stepIdx        = 0;
         renderBoard(miniEl, demoRound);
 
+        // Clear any active-op highlights
+        function clearOpHighlight() {
+            const btns = miniEl.querySelectorAll('.op-btn');
+            btns.forEach(b => b.classList.remove('op-btn-active'));
+        }
+
         function runStep() {
-            if (stepIdx >= steps.length) { onDone(); return; }
+            if (stepIdx >= steps.length) { clearOpHighlight(); onDone(); return; }
             const step = steps[stepIdx++];
             const aIdx = idToCardIdx[step.aId];
             const bIdx = idToCardIdx[step.bId];
@@ -622,7 +628,13 @@
             demoRound = roundSelectTwo(demoRound, aIdx, bIdx);
             renderBoard(miniEl, demoRound);
 
+            // Highlight the operator that will be used
+            clearOpHighlight();
+            const opBtn = miniEl.querySelector(`.op-btn[data-op="${step.op}"]`);
+            if (opBtn) opBtn.classList.add('op-btn-active');
+
             const t1 = setTimeout(() => {
+                clearOpHighlight();
                 const next = roundApplyOp(demoRound, step.op);
                 if (!next) { onDone(); return; }
                 demoRound = next;
@@ -651,12 +663,20 @@
         modal.innerHTML = `
 <div class="spk-sol-card">
   <div class="spk-sol-heading">How to make <span class="spk-sol-n">${n}</span></div>
-  <div class="spk-sol-board">
+  <div class="spk-sol-board" style="display:none">
     <div class="spk-diamond-grid">
       <div class="spk-slot spk-slot-top"></div>
       <div class="spk-slot spk-slot-left"></div>
       <div class="spk-slot spk-slot-right"></div>
       <div class="spk-slot spk-slot-bottom"></div>
+    </div>
+    <div class="spk-op-overlay">
+      <div class="operators-grid">
+        <button class="op-btn" data-op="+">+</button>
+        <button class="op-btn" data-op="-">\u2212</button>
+        <button class="op-btn" data-op="*">\u00d7</button>
+        <button class="op-btn" data-op="/">\u00f7</button>
+      </div>
     </div>
   </div>
   <div class="spk-sol-expr">${expr}</div>
@@ -675,18 +695,17 @@
         let demoTimeouts = [];
         let demoRunning  = false;
 
-        renderBoard(boardEl, createRound([...digits]));
-
         function stopDemo() {
             demoTimeouts.forEach(clearTimeout);
             demoTimeouts    = [];
             demoRunning     = false;
             watchBtn.disabled    = false;
-            watchBtn.textContent = 'Watch';
+            watchBtn.textContent = 'Watch again';
         }
 
         watchBtn.addEventListener('click', () => {
             if (demoRunning) return;
+            boardEl.style.display = '';
             demoRunning          = true;
             watchBtn.disabled    = true;
             watchBtn.textContent = 'Playing\u2026';

@@ -330,6 +330,12 @@
     z-index: 10;
 }
 .spk-op-overlay.spk-op-show { display: flex; }
+.op-btn.op-btn-active {
+    background: #22d3ee;
+    color: #0f172a;
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.5);
+}
 
 /* ---------------------------------------------------------------
    RESULT SCREEN  (end of game — completion or game over)
