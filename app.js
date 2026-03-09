@@ -1484,18 +1484,12 @@ function initPuzzle(puzzleNum, isArchive = false) {
         updateUI();
         showCleanWinState();
 
-        const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
-        const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
-
-        let badge = 'Solved';
-        let badgeClass = '';
-        if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
-        else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
+        const title = getSolveTitle({ hinted: !!history.hinted, moves: history.moves, undos: history.undos || 0, solveTime: history.solveTime });
 
         setTimeout(() => {
             showVictoryCard({
-                badge,
-                badgeClass,
+                badge: title.badge,
+                badgeClass: title.badgeClass,
                 date: formatPuzzleDateLong(puzzleNum),
                 time: formatTimeHuman(history.solveTime),
                 moves: String(history.moves),
@@ -1528,18 +1522,12 @@ function initPuzzle(puzzleNum, isArchive = false) {
     if (alreadySolved && !isArchive) {
         showCleanWinState();
 
-        const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
-        const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
-
-        let badge2 = 'Solved';
-        let badgeClass2 = '';
-        if (isFast) { badge2 = 'Perfect + Fast'; badgeClass2 = 'perfect'; }
-        else if (isPerfect) { badge2 = 'Perfect'; badgeClass2 = 'perfect'; }
+        const title2 = getSolveTitle({ hinted: !!history.hinted, moves: history.moves, undos: history.undos || 0, solveTime: history.solveTime });
 
         setTimeout(() => {
             showVictoryCard({
-                badge: badge2,
-                badgeClass: badgeClass2,
+                badge: title2.badge,
+                badgeClass: title2.badgeClass,
                 date: formatPuzzleDateLong(puzzleNum),
                 time: formatTimeHuman(history.solveTime),
                 moves: String(history.moves),
@@ -1551,6 +1539,21 @@ function initPuzzle(puzzleNum, isArchive = false) {
     } else if (!alreadySolved) {
         startHintTimer();
     }
+}
+
+/**
+ * Determine the solve title and CSS class for the victory badge.
+ * @param {{ hinted: boolean, moves: number, undos: number, solveTime: number }} opts
+ * @returns {{ badge: string, badgeClass: string }}
+ */
+function getSolveTitle({ hinted, moves, undos, solveTime }) {
+    if (hinted) return { badge: 'Solved with hint', badgeClass: 'hinted' };
+    const isPerfect = moves === PERFECT_MOVES && (undos || 0) === 0;
+    if (isPerfect && solveTime != null && solveTime <= FAST_SOLVE_THRESHOLD_S) {
+        return { badge: 'Perfect', badgeClass: 'perfect' };
+    }
+    if (isPerfect) return { badge: 'Clean', badgeClass: 'clean' };
+    return { badge: 'Solved', badgeClass: '' };
 }
 
 function showVictoryCard(opts) {
@@ -1896,16 +1899,12 @@ async function handleWin() {
     // Clean win: fade cards, show big 24
     showCleanWinState();
 
-    let badge = 'Solved';
-    let badgeClass = '';
-    if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
-    else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
-    if (playState.hinted) { badge += ' (with hint)'; }
+    const solveTitle = getSolveTitle({ hinted: playState.hinted, moves: playState.moves, undos: playState.undoCount, solveTime });
 
     setTimeout(() => {
         showVictoryCard({
-            badge,
-            badgeClass,
+            badge: solveTitle.badge,
+            badgeClass: solveTitle.badgeClass,
             date: formatPuzzleDateLong(currentPuzzle.puzzleNum),
             time: formatTimeHuman(solveTime),
             moves: String(playState.moves),
@@ -2006,9 +2005,9 @@ function buildDailyShareText() {
     let text = `\uD83E\uDDE0 Make24 \u2014 ${formatPuzzleDateLong(currentPuzzle.puzzleNum)}\n`;
     text += '\n';
 
-    if (isFast)         text += `\u26A1 Perfect + Fast solve (${moves} moves)\n`;
-    else if (isPerfect) text += `\u2B50 Perfect solve (${moves} moves)\n`;
-    else                text += `\u2705 Solved in ${moves} moves\n`;
+    if (isPerfect && isFast) text += `\u2B50 Perfect solve (${moves} moves)\n`;
+    else if (isPerfect)     text += `\u2B50 Clean solve (${moves} moves)\n`;
+    else                    text += `\u2705 Solved in ${moves} moves\n`;
 
     if (solveTime) text += `\u23F1 ${solveTime}s\n`;
     if (gameState.streak > 0) text += `\uD83D\uDD25 ${gameState.streak} day streak\n`;
@@ -2552,9 +2551,9 @@ function showPuzzleDetails(puzzleNum) {
         const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
         const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
 
-        if (isFast) { statusEl.textContent = 'Perfect + Fast'; statusEl.className = 'details-status perfect'; }
-        else if (isPerfect) { statusEl.textContent = 'Perfect'; statusEl.className = 'details-status perfect'; }
-        else { statusEl.textContent = 'Solved'; statusEl.className = 'details-status solved'; }
+        const detailTitle = getSolveTitle({ hinted: !!history.hinted, moves: history.moves, undos: history.undos || 0, solveTime: history.solveTime });
+        statusEl.textContent = detailTitle.badge;
+        statusEl.className = 'details-status' + (detailTitle.badgeClass ? ` ${detailTitle.badgeClass}` : ' solved');
 
         // Stats
         const addStat = (value, label) => {
@@ -2751,18 +2750,11 @@ function showReplayVictoryCard() {
     const history = gameState.history[puzzleNum];
     if (!history) return;
 
-    const isPerfect = history.moves === PERFECT_MOVES && (history.undos || 0) === 0;
-    const isFast = isPerfect && history.solveTime && history.solveTime <= FAST_SOLVE_THRESHOLD_S;
-
-    let badge = 'Solved';
-    let badgeClass = '';
-    if (isFast) { badge = 'Perfect + Fast'; badgeClass = 'perfect'; }
-    else if (isPerfect) { badge = 'Perfect'; badgeClass = 'perfect'; }
-    if (history.hinted) { badge += ' (with hint)'; }
+    const replayTitle = getSolveTitle({ hinted: !!history.hinted, moves: history.moves, undos: history.undos || 0, solveTime: history.solveTime });
 
     showVictoryCard({
-        badge,
-        badgeClass,
+        badge: replayTitle.badge,
+        badgeClass: replayTitle.badgeClass,
         date: formatPuzzleDateLong(puzzleNum),
         time: formatTimeHuman(history.solveTime),
         moves: String(history.moves),

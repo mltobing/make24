@@ -802,6 +802,8 @@ body {
     cursor: pointer;
 }
 .victory-badge.perfect { color: #fbbf24; }
+.victory-badge.clean { color: #2dd4bf; }
+.victory-badge.hinted { color: #94a3b8; }
 
 .victory-date {
     font-size: 0.8125rem;
@@ -849,6 +851,7 @@ body {
     display: flex;
     gap: 8px;
     justify-content: center;
+    flex-wrap: wrap;
 }
 
 .btn {
@@ -856,8 +859,22 @@ body {
     font-family: 'DM Sans', sans-serif; font-size: 0.875rem; font-weight: 600;
     cursor: pointer; transition: all 0.15s ease;
 }
-.btn-primary { background: #22d3ee; color: #0f172a; }
-.btn-primary:hover { background: #0891b2; }
+.btn-primary {
+    background: #10b981;
+    color: #fff;
+    border: 2px solid #10b981;
+}
+.btn-primary:hover { background: #059669; border-color: #059669; }
+
+.btn-secondary {
+    background: transparent;
+    color: #94a3b8;
+    border: 2px solid #334155;
+}
+.btn-secondary:hover {
+    border-color: #94a3b8;
+    color: #f1f5f9;
+}
 
 .btn-challenge {
     background: transparent;
@@ -869,10 +886,32 @@ body {
     color: #f1f5f9;
 }
 
+.btn-hardmode {
+    position: relative;
+    background: transparent;
+    color: #fbbf24;
+    border: 2px solid rgba(251, 191, 36, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-hardmode:hover {
+    border-color: #fbbf24;
+    color: #fde68a;
+}
+.btn-hardmode-icon {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 0.6875rem;
+    line-height: 1;
+    pointer-events: none;
+}
+
 .victory-footer {
     margin-top: 14px;
-    font-size: 0.8125rem;
-    color: #64748b;
+    font-size: 0.75rem;
+    color: #475569;
     text-align: center;
     letter-spacing: 0.01em;
 }
@@ -1229,6 +1268,8 @@ body {
 }
 .details-status.solved { color: #10b981; }
 .details-status.perfect { color: #fbbf24; }
+.details-status.clean { color: #2dd4bf; }
+.details-status.hinted { color: #94a3b8; }
 .details-status.missed { color: #64748b; }
 
 .details-stats-row {
@@ -1572,17 +1613,17 @@ body {
    ============================================================ */
 .difficulty-chip {
     display: inline-block;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    padding: 2px 8px;
+    font-size: 0.625rem;
+    font-weight: 500;
+    padding: 1px 6px;
     border-radius: 4px;
     margin-top: 4px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
-.difficulty-chip.easy { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-.difficulty-chip.medium { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-.difficulty-chip.hard { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.difficulty-chip.easy { background: rgba(16, 185, 129, 0.08); color: rgba(16, 185, 129, 0.6); }
+.difficulty-chip.medium { background: rgba(245, 158, 11, 0.08); color: rgba(245, 158, 11, 0.6); }
+.difficulty-chip.hard { background: rgba(239, 68, 68, 0.08); color: rgba(239, 68, 68, 0.6); }
 
 /* ============================================================
    FREEZE TOOLTIP

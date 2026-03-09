@@ -1478,8 +1478,15 @@
 
         const btn = document.createElement('button');
         btn.id        = 'spkTryBtn';
-        btn.className = 'btn btn-challenge';
-        btn.textContent = '\uD83D\uDD11 Hard Mode';
+        btn.className = 'btn btn-hardmode';
+        const icon = document.createElement('span');
+        icon.className = 'btn-hardmode-icon';
+        icon.textContent = '\uD83D\uDD11';
+        icon.setAttribute('aria-hidden', 'true');
+        btn.appendChild(icon);
+        const label = document.createElement('span');
+        label.textContent = 'Hard Mode';
+        btn.appendChild(label);
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             launchAfterHours();
