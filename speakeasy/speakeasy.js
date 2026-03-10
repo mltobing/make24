@@ -852,6 +852,9 @@
     // SEQUENCE-RUN GAME SCREEN
     // ============================================================
     function startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, resumeState) {
+        if (typeof trackEvent === 'function') {
+            trackEvent('speakeasy_started', puzzleNum, true);
+        }
         const totalTargets = targetsList.length;
 
         let solvedSet  = new Set(resumeState ? resumeState.solvedList : []);
