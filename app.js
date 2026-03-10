@@ -38,6 +38,31 @@ const APP_CONFIG = {
 const SUPABASE_URL = (typeof make24Db !== 'undefined') ? make24Db.url : '';
 const SUPABASE_KEY = (typeof make24Db !== 'undefined') ? make24Db.key : '';
 
+async function trackEvent(eventType, puzzleNum = null, isSpeakeasy = false, metadata = {}) {
+  const deviceId = getDeviceId();
+  if (!deviceId) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/game_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        device_id: deviceId,
+        event_type: eventType,
+        puzzle_num: puzzleNum,
+        is_speakeasy: isSpeakeasy,
+        metadata: metadata
+      })
+    });
+  } catch (e) {
+    // silent fail — never break the game
+  }
+}
+
 // ============================================================
 // NAMED CONSTANTS (replaces magic numbers)
 // ============================================================
@@ -1285,6 +1310,7 @@ function getNearestEarlierUnsolvedPuzzle(fromPuzzleNum) {
 }
 
 function playAnother() {
+    trackEvent('archive_opened', currentPuzzle.puzzleNum, currentPuzzle.isSpeakeasy === true);
     const next = getNearestEarlierUnsolvedPuzzle(currentPuzzle.puzzleNum);
     hideVictoryCard();
     if (next !== null) {
@@ -1928,6 +1954,12 @@ async function handleWin() {
         });
     }
 
+    trackEvent('post_solve_shown', currentPuzzle.puzzleNum, currentPuzzle.isSpeakeasy === true, {
+        moves: playState.moves,
+        solve_time: solveTime,
+        is_perfect: isPerfect
+    });
+
     // Gentle nudge at streak milestones (if not signed in)
     maybeShowSyncNudge();
 }
@@ -2033,6 +2065,7 @@ function share() {
             is_perfect: (playState.moves === PERFECT_MOVES && playState.undoCount === 0)
         });
     }
+    trackEvent('share_clicked', currentPuzzle.puzzleNum, currentPuzzle.isSpeakeasy === true);
     const text = buildDailyShareText();
     // Copy first (silent), then open native share sheet if available
     navigator.clipboard.writeText(text).catch(() => {});
@@ -2645,6 +2678,7 @@ function generateFakePrelude(numbers, extraMoves) {
 }
 
 function startReplay(puzzleNum) {
+    trackEvent('replay_clicked', puzzleNum, currentPuzzle.isSpeakeasy === true);
     const history = gameState.history[puzzleNum];
     const numbers = generatePuzzle(puzzleNum);
 
