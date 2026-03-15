@@ -1654,7 +1654,10 @@ function renderCards() {
                 if (playState.selected[0] === cardIndex) card.classList.add('first');
                 else card.classList.add('second');
             }
-            card.addEventListener('click', () => selectCard(cardIndex));
+            card.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                selectCard(cardIndex);
+            });
             slot.appendChild(card);
         }
     });
@@ -2513,7 +2516,10 @@ if (document.getElementById('shakeToggle')) {
 // EVENT LISTENERS
 // ============================================================
 document.querySelectorAll('.op-btn').forEach(btn => {
-    btn.addEventListener('click', () => applyOperation(btn.dataset.op));
+    btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        applyOperation(btn.dataset.op);
+    });
 });
 
 document.getElementById('undoBtn').addEventListener('click', animatedUndo);

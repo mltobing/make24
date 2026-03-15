@@ -482,23 +482,26 @@
         const arena = el.querySelector('.spk-arena');
         if (!arena) return;
 
-        arena.addEventListener('click', (e) => {
+        arena.addEventListener('pointerdown', (e) => {
             const cardEl = e.target.closest('[data-card-idx]');
             const opBtn  = e.target.closest('[data-op]');
             const undoEl = e.target.closest('[data-action="undo"]');
             const opOvl  = e.target.closest('.spk-op-overlay');
 
             if (undoEl) {
+                e.preventDefault();
                 setRound(roundUndo(getRound()));
                 renderBoard(el, getRound());
                 return;
             }
             if (cardEl) {
+                e.preventDefault();
                 setRound(roundSelectCard(getRound(), parseInt(cardEl.dataset.cardIdx, 10)));
                 renderBoard(el, getRound());
                 return;
             }
             if (opBtn) {
+                e.preventDefault();
                 const next = roundApplyOp(getRound(), opBtn.dataset.op);
                 if (!next) return;
                 setRound(next);
@@ -507,6 +510,7 @@
                 return;
             }
             if (opOvl && !opBtn) {
+                e.preventDefault();
                 const r = getRound();
                 setRound({ ...r, selected: [] });
                 renderBoard(el, getRound());
