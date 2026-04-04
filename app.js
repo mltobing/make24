@@ -115,15 +115,23 @@ async function trackAppEvent(eventName, props = {}) {
     const deviceId = getDeviceId();
     const sessionId = appEventState.sessionId || getSessionId();
     appEventState.sessionId = sessionId;
-    if (!deviceId || !SUPABASE_URL || !SUPABASE_KEY) return;
+    if (!deviceId || !SUPABASE_URL || !SUPABASE_KEY) {
+        logError('trackAppEvent skipped missing config', {
+            eventName,
+            appSlug: APP_SLUG,
+            hasDeviceId: !!deviceId,
+            hasSupabaseUrl: !!SUPABASE_URL,
+            hasSupabaseKey: !!SUPABASE_KEY
+        });
+        return;
+    }
 
     try {
+        const headers = await getAuthHeaders();
         const response = await fetch(`${SUPABASE_URL}/rest/v1/app_events`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                ...headers,
                 'Prefer': 'return=minimal'
             },
             body: JSON.stringify({
@@ -138,10 +146,21 @@ async function trackAppEvent(eventName, props = {}) {
         if (!response.ok) {
             let errorBody = null;
             try { errorBody = await response.text(); } catch (_) {}
-            logError(`trackAppEvent ${eventName} failed`, { status: response.status, props, errorBody });
+            logError('trackAppEvent insert failed', {
+                eventName,
+                appSlug: APP_SLUG,
+                status: response.status,
+                props,
+                errorBody
+            });
         }
     } catch (e) {
-        logError(`trackAppEvent ${eventName} exception`, { error: e, props });
+        logError('trackAppEvent insert exception', {
+            eventName,
+            appSlug: APP_SLUG,
+            props,
+            error: e
+        });
     }
 }
 
