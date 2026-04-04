@@ -57,18 +57,24 @@ global.localStorage = {
     setItem(k, v) { this._store[k] = v; },
     removeItem(k) { delete this._store[k]; },
 };
+global.sessionStorage = {
+    _store: {},
+    getItem(k) { return this._store[k] ?? null; },
+    setItem(k, v) { this._store[k] = v; },
+    removeItem(k) { delete this._store[k]; },
+};
 global.navigator = { share: null, clipboard: { writeText() { return Promise.resolve(); } } };
 global.setTimeout = (fn) => fn();
 global.clearTimeout = () => {};
 global.Date = Date;
 global.confirm = () => false;
 global.alert = () => {};
-global.fetch = () => Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(null), text: () => Promise.resolve('') });
 
 // Mock make24Db global (provided by supabase-service.js in the browser)
 global.make24Db = {
-    url: '',
-    key: '',
+    url: 'https://example.supabase.co',
+    key: 'test-key',
     getSession:        () => Promise.resolve({ data: { session: null } }),
     signInWithGoogle:  () => Promise.resolve({}),
     sendOtp:           () => Promise.resolve({}),
@@ -236,6 +242,46 @@ describe('formatNumber', () => {
     test('formats negative fractions', () => {
         expect(game.formatNumber(-0.5)).toBe('\u22121/2');
         expect(game.formatNumber(-1.5)).toBe('\u22121 1/2');
+    });
+});
+
+describe('app event lifecycle', () => {
+    test('run_start and first_interaction are emitted once per run', async () => {
+        const calls = [];
+        global.fetch = (url, opts) => {
+            calls.push({ url, payload: JSON.parse(opts.body) });
+            return Promise.resolve({ ok: true, text: () => Promise.resolve('') });
+        };
+
+        game.appEventState.sessionId = 'sess_test';
+        game.startRunEventLifecycle(123, false);
+        game.trackFirstInteraction('card_select');
+        game.trackFirstInteraction('card_select');
+
+        await Promise.resolve();
+
+        const appEvents = calls
+            .filter(c => c.url.includes('/app_events'))
+            .map(c => c.payload.event_name);
+
+        expect(appEvents.filter(e => e === 'run_start')).toHaveLength(1);
+        expect(appEvents.filter(e => e === 'first_interaction')).toHaveLength(1);
+    });
+
+    test('trackAppEvent writes app slug and props', async () => {
+        let payload = null;
+        global.fetch = (_url, opts) => {
+            payload = JSON.parse(opts.body);
+            return Promise.resolve({ ok: true, text: () => Promise.resolve('') });
+        };
+
+        game.appEventState.sessionId = 'sess_payload';
+        await game.trackAppEvent('run_end', { puzzle_num: 7, outcome: 'solved' });
+
+        expect(payload.event_name).toBe('run_end');
+        expect(payload.app_slug).toBe('make24');
+        expect(payload.props.puzzle_num).toBe(7);
+        expect(payload.props.outcome).toBe('solved');
     });
 });
 

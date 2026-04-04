@@ -31,6 +31,7 @@ const APP_CONFIG = {
     publicUrl: 'https://make24.app/',
     shareLabel: 'make24.app'
 };
+const APP_SLUG = 'make24';
 
 // Supabase — client and credentials owned by supabase-service.js (loaded first).
 // Keep local aliases so the raw REST fetch calls below don't need to change.
@@ -61,6 +62,87 @@ async function trackEvent(eventType, puzzleNum = null, isSpeakeasy = false, meta
   } catch (e) {
     // silent fail — never break the game
   }
+}
+
+function getSessionId() {
+    const key = 'make24_session_id';
+    try {
+        if (typeof sessionStorage !== 'undefined') {
+            let sessionId = sessionStorage.getItem(key);
+            if (!sessionId) {
+                sessionId = 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+                sessionStorage.setItem(key, sessionId);
+            }
+            return sessionId;
+        }
+    } catch (e) {
+        logError('getSessionId', e);
+    }
+    return 'sess_fallback_' + Date.now().toString(36);
+}
+
+const appEventState = {
+    appOpenTracked: false,
+    sessionId: null,
+    currentRunId: null,
+    currentRunStarted: false,
+    firstInteractionTracked: false,
+    runEndTracked: false,
+};
+
+function startRunEventLifecycle(puzzleNum, isArchive) {
+    appEventState.currentRunId = 'run_' + puzzleNum + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    appEventState.currentRunStarted = true;
+    appEventState.firstInteractionTracked = false;
+    appEventState.runEndTracked = false;
+    trackAppEvent('run_start', {
+        run_id: appEventState.currentRunId,
+        puzzle_num: puzzleNum,
+        is_archive: isArchive === true
+    });
+}
+
+function trackFirstInteraction(interactionType) {
+    if (!appEventState.currentRunStarted || appEventState.firstInteractionTracked) return;
+    appEventState.firstInteractionTracked = true;
+    trackAppEvent('first_interaction', {
+        run_id: appEventState.currentRunId,
+        interaction_type: interactionType
+    });
+}
+
+async function trackAppEvent(eventName, props = {}) {
+    const deviceId = getDeviceId();
+    const sessionId = appEventState.sessionId || getSessionId();
+    appEventState.sessionId = sessionId;
+    if (!deviceId || !SUPABASE_URL || !SUPABASE_KEY) return;
+
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/app_events`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+                event_name: eventName,
+                app_slug: APP_SLUG,
+                device_id: deviceId,
+                session_id: sessionId,
+                url: (typeof window !== 'undefined' && window.location?.href) ? window.location.href : null,
+                props
+            })
+        });
+        if (!response.ok) {
+            let errorBody = null;
+            try { errorBody = await response.text(); } catch (_) {}
+            logError(`trackAppEvent ${eventName} failed`, { status: response.status, props, errorBody });
+        }
+    } catch (e) {
+        logError(`trackAppEvent ${eventName} exception`, { error: e, props });
+    }
 }
 
 // ============================================================
@@ -1535,6 +1617,7 @@ function initPuzzle(puzzleNum, isArchive = false) {
         playState.undoCount = history.undos || 0;
         playState.hinted = false;
     } else {
+        startRunEventLifecycle(puzzleNum, isArchive);
         playState.moves = 0;
         playState.completed = false;
         playState.operatorHistory = [];
@@ -1730,6 +1813,7 @@ function formatNumberHTML(n) {
 function selectCard(index) {
     if (playState.completed) return;
     if (playState.cards[index].used) return;
+    trackFirstInteraction('card_select');
 
     // Tutorial gate: only allow the correct card
     if (tutorialActive) {
@@ -1899,6 +1983,23 @@ async function handleWin() {
 
     const isPerfect = playState.moves === PERFECT_MOVES && playState.undoCount === 0 && !playState.hinted;
     const isFast = isPerfect && solveTime <= FAST_SOLVE_THRESHOLD_S;
+
+    if (!appEventState.runEndTracked && appEventState.currentRunStarted) {
+        appEventState.runEndTracked = true;
+        trackAppEvent('run_end', {
+            run_id: appEventState.currentRunId,
+            puzzle_num: currentPuzzle.puzzleNum,
+            moves: playState.moves,
+            solve_time_seconds: solveTime,
+            is_perfect: isPerfect,
+            is_fast: isFast,
+            outcome: 'solved',
+            undos: playState.undoCount,
+            hinted: playState.hinted,
+            duration_ms: playState.startTime ? (playState.endTime - playState.startTime) : 0,
+            is_archive: currentPuzzle.isArchive === true
+        });
+    }
 
     if (canUpgradeResult(currentPuzzle.puzzleNum)) {
         gameState.history[currentPuzzle.puzzleNum] = {
@@ -3492,6 +3593,13 @@ function addDifficultyChip(puzzleNum) {
 // ============================================================
 async function boot() {
     loadState();
+    appEventState.sessionId = getSessionId();
+    if (!appEventState.appOpenTracked) {
+        appEventState.appOpenTracked = true;
+        trackAppEvent('app_open', {
+            referrer: (typeof document !== 'undefined' && document.referrer) ? document.referrer : null
+        });
+    }
 
     // Wait for the Supabase auth state to be fully resolved before rendering.
     // getSession() restores any persisted session from storage.
@@ -3771,5 +3879,10 @@ if (typeof module !== 'undefined' && module.exports) {
         EPOCH_DATE,
         PUZZLE_SEED_MULTIPLIER,
         solve24Full,
+        startRunEventLifecycle,
+        trackFirstInteraction,
+        trackAppEvent,
+        getSessionId,
+        appEventState,
     };
 }
