@@ -38,18 +38,21 @@ Jest with `--experimental-vm-modules`).
 | `speakeasy/speakeasy.js` | "After Hours" hard-mode (self-contained IIFE) |
 | `speakeasy/speakeasy.css` | After Hours styles |
 | `netlify/functions/ls-validate.js` | Serverless proxy for Lemon Squeezy license validation |
+| `netlify/functions/app-events.js` | Server-side ingestion for `public.app_events` lifecycle analytics |
 | `netlify.toml` | Netlify redirect rules |
 
 ---
 
 ## Environment variables / secrets
 
-This is a static site — there are no server-side environment variables required
-for the base game.
+This is a static site for gameplay, plus Netlify serverless functions for
+license validation and app-event ingestion.
 
 | Location | Value | Notes |
 |---|---|---|
 | `supabase-service.js` | Supabase URL + anon key | Anon key is safe to embed (RLS is the real security boundary). Rotate here if the key ever leaks. |
+| Netlify env var | `SUPABASE_URL` | Supabase project URL for server-side app-event writes. |
+| Netlify env var | `SUPABASE_SERVICE_ROLE_KEY` | Required by `netlify/functions/app-events.js`; never expose this key client-side. |
 | `speakeasy/speakeasy.js` | `LEMONSQUEEZY_CHECKOUT_URL` | Set to the live checkout URL before enabling the paywall (`HARD_MODE_PAYWALL_ENABLED = true`). |
 | `speakeasy/speakeasy.js` | `LEMONSQUEEZY_PRODUCT_ID` | Numeric product ID from the Lemon Squeezy dashboard. |
 
@@ -74,15 +77,15 @@ Defined at the top of `speakeasy/speakeasy.js`:
 Deployment is automatic via **Netlify**:
 
 1. Push to `main` → Netlify builds and deploys (publish directory: `.`).
-2. The `netlify.toml` file wires `/api/ls/validate` → the serverless function.
+2. The `netlify.toml` file wires `/api/ls/validate` and `/api/app-events` → serverless functions.
 3. No build command is required (static site).
 
 To deploy from scratch:
 
 1. Import the repo into Netlify.
 2. Set publish directory to `.` and leave the build command blank.
-3. No environment variables are required in the Netlify dashboard for current
-   production settings.
+3. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Netlify for server-side
+   app-event analytics ingestion.
 
 ---
 

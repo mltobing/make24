@@ -9,3 +9,8 @@
   from   = "/api/ls/validate"
   to     = "/.netlify/functions/ls-validate"
   status = 200
+
+[[redirects]]
+  from   = "/api/app-events"
+  to     = "/.netlify/functions/app-events"
+  status = 200
