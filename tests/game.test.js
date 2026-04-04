@@ -262,7 +262,7 @@ describe('app event lifecycle', () => {
         await Promise.resolve();
 
         const appEvents = calls
-            .filter(c => c.url.includes('/app_events'))
+            .filter(c => c.url.includes('/api/app-events'))
             .map(c => c.payload.event_name);
 
         expect(appEvents.filter(e => e === 'run_start')).toHaveLength(1);
@@ -270,20 +270,17 @@ describe('app event lifecycle', () => {
     });
 
 
-    test('trackAppEvent uses auth session token when available', async () => {
-        let authHeader = null;
-        global.make24Db.getSession = () => Promise.resolve({ data: { session: { access_token: 'session-token-123' } } });
-        global.fetch = (_url, opts) => {
-            authHeader = opts.headers.Authorization;
+    test('trackAppEvent uses the server analytics endpoint', async () => {
+        let url = null;
+        global.fetch = (fetchUrl) => {
+            url = fetchUrl;
             return Promise.resolve({ ok: true, text: () => Promise.resolve('') });
         };
 
-        game.appEventState.sessionId = 'sess_auth';
+        game.appEventState.sessionId = 'sess_endpoint';
         await game.trackAppEvent('app_open', { test: true });
 
-        expect(authHeader).toBe('Bearer session-token-123');
-
-        global.make24Db.getSession = () => Promise.resolve({ data: { session: null } });
+        expect(url).toBe('/api/app-events');
     });
     test('trackAppEvent writes app slug and props', async () => {
         let payload = null;
