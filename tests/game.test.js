@@ -259,6 +259,7 @@ describe('app event lifecycle', () => {
         game.trackFirstInteraction('card_select');
 
         await Promise.resolve();
+        await Promise.resolve();
 
         const appEvents = calls
             .filter(c => c.url.includes('/app_events'))
@@ -268,6 +269,22 @@ describe('app event lifecycle', () => {
         expect(appEvents.filter(e => e === 'first_interaction')).toHaveLength(1);
     });
 
+
+    test('trackAppEvent uses auth session token when available', async () => {
+        let authHeader = null;
+        global.make24Db.getSession = () => Promise.resolve({ data: { session: { access_token: 'session-token-123' } } });
+        global.fetch = (_url, opts) => {
+            authHeader = opts.headers.Authorization;
+            return Promise.resolve({ ok: true, text: () => Promise.resolve('') });
+        };
+
+        game.appEventState.sessionId = 'sess_auth';
+        await game.trackAppEvent('app_open', { test: true });
+
+        expect(authHeader).toBe('Bearer session-token-123');
+
+        global.make24Db.getSession = () => Promise.resolve({ data: { session: null } });
+    });
     test('trackAppEvent writes app slug and props', async () => {
         let payload = null;
         global.fetch = (_url, opts) => {
