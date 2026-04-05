@@ -445,3 +445,11 @@ describe('named constants', () => {
         expect(game.FAST_SOLVE_THRESHOLD_S).toBe(60);
     });
 });
+
+describe('onboarding state helper', () => {
+    test('auto-starts onboarding only when no history and not completed', () => {
+        expect(game.shouldAutoStartOnboardingFromState(false, 0)).toBe(true);
+        expect(game.shouldAutoStartOnboardingFromState(true, 0)).toBe(false);
+        expect(game.shouldAutoStartOnboardingFromState(false, 1)).toBe(false);
+    });
+});
