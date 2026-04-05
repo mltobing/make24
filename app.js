@@ -165,6 +165,7 @@ async function trackAppEvent(eventName, props = {}) {
 // NAMED CONSTANTS (replaces magic numbers)
 // ============================================================
 const STORAGE_KEY = 'make24_v5';
+const ONBOARDING_COMPLETE_KEY = 'make24_onboarding_complete';
 const ARCHIVE_PAGE_SIZE = 30;
 const STREAK_FREEZE_INTERVAL = 7;
 const PERFECT_MOVES = 3;
@@ -1831,6 +1832,11 @@ function selectCard(index) {
     if (playState.cards[index].used) return;
     trackFirstInteraction('card_select');
 
+    if (onboardingCoachmarkVisible && !tutorialActive) {
+        startTutorial();
+        return;
+    }
+
     // Tutorial gate: only allow the correct card
     if (tutorialActive) {
         const cardValue = playState.cards[index].value;
@@ -3410,6 +3416,7 @@ document.getElementById('diagnosticModal')?.addEventListener('click', (e) => {
 // ============================================================
 let tutorialActive = false;
 let tutorialStep = 0;
+let onboardingCoachmarkVisible = false;
 
 // Tutorial puzzle: [1, 2, 3, 4] → 1×2=2, 2×3=6, 6×4=24
 const TUTORIAL_NUMBERS = [1, 2, 3, 4];
@@ -3435,21 +3442,55 @@ const TUTORIAL_STEPS = [
 ];
 
 function shouldShowTutorialHint() {
-    if (localStorage.getItem('make24_tutorial')) return false;
-    // Show the ? for users with no history
-    return Object.keys(gameState.history).length === 0;
+    return true;
+}
+
+function shouldAutoStartOnboardingFromState(onboardingComplete, historyCount) {
+    return !onboardingComplete && historyCount === 0;
+}
+
+function isOnboardingComplete() {
+    return localStorage.getItem(ONBOARDING_COMPLETE_KEY) === '1';
+}
+
+function shouldAutoStartOnboarding() {
+    return shouldAutoStartOnboardingFromState(
+        isOnboardingComplete(),
+        Object.keys(gameState.history).length
+    );
+}
+
+function markOnboardingComplete() {
+    localStorage.setItem(ONBOARDING_COMPLETE_KEY, '1');
+}
+
+function showOnboardingCoachmark() {
+    const coachmark = document.getElementById('onboardingCoachmark');
+    if (!coachmark) return;
+    onboardingCoachmarkVisible = true;
+    coachmark.classList.add('visible');
+}
+
+function hideOnboardingCoachmark() {
+    const coachmark = document.getElementById('onboardingCoachmark');
+    if (!coachmark) return;
+    onboardingCoachmarkVisible = false;
+    coachmark.classList.remove('visible');
 }
 
 function showTutorialHelpBtn() {
-    document.getElementById('tutorialHelpBtn').classList.add('visible');
+    const btn = document.getElementById('tutorialHelpBtn');
+    btn.classList.add('visible');
+    if (shouldAutoStartOnboarding()) btn.classList.add('discoverable');
+    else btn.classList.remove('discoverable');
 }
 
 function hideTutorialHelpBtn() {
-    document.getElementById('tutorialHelpBtn').classList.remove('visible');
-    localStorage.setItem('make24_tutorial', '1');
+    document.getElementById('tutorialHelpBtn').classList.remove('discoverable');
 }
 
 function startTutorial() {
+    hideOnboardingCoachmark();
     tutorialActive = true;
     tutorialStep = 0;
 
@@ -3562,7 +3603,8 @@ function tutorialCheckAction(action, detail) {
 function endTutorial() {
     tutorialActive = false;
     tutorialStep = 0;
-    hideTutorialHelpBtn();
+    markOnboardingComplete();
+    showTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
     clearTutorialHighlights();
@@ -3573,7 +3615,8 @@ function endTutorial() {
 
 function skipTutorial() {
     tutorialActive = false;
-    hideTutorialHelpBtn();
+    markOnboardingComplete();
+    showTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
     clearTutorialHighlights();
@@ -3584,6 +3627,11 @@ function skipTutorial() {
 document.getElementById('tutorialSkip').addEventListener('click', skipTutorial);
 document.getElementById('tutorialHelpBtn').addEventListener('click', () => {
     startTutorial();
+});
+document.getElementById('onboardingSkip').addEventListener('click', () => {
+    markOnboardingComplete();
+    hideOnboardingCoachmark();
+    showTutorialHelpBtn();
 });
 document.getElementById('menuTutorialBtn').addEventListener('click', () => {
     document.getElementById('moreMenu').classList.remove('show');
@@ -3633,10 +3681,8 @@ async function boot() {
     reconcileStreakFromHistory();
     initPuzzle(getTodayPuzzleNumber(), false);
 
-    // Show subtle ? for first-time users (tutorial is opt-in)
-    if (shouldShowTutorialHint()) {
-        showTutorialHelpBtn();
-    }
+    if (shouldShowTutorialHint()) showTutorialHelpBtn();
+    if (shouldAutoStartOnboarding()) showOnboardingCoachmark();
 
     // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
     bootComplete = true;
@@ -3900,5 +3946,6 @@ if (typeof module !== 'undefined' && module.exports) {
         trackAppEvent,
         getSessionId,
         appEventState,
+        shouldAutoStartOnboardingFromState,
     };
 }
