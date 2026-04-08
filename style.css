@@ -631,6 +631,10 @@ body {
     opacity: 0.9;
 }
 
+.objective-copy.hidden {
+    display: none;
+}
+
 /* Hint display */
 .hint-display {
     font-family: 'DM Sans', sans-serif;
