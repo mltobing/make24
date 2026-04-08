@@ -376,12 +376,19 @@
     // TODO: wire to real data when record_speakeasy_solve returns percentile
     function getHardModePercentile() { return null; }
 
+    function formatRunTime(totalSec) {
+        if (totalSec < 60) return `${totalSec}s`;
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+
     function buildHardModeShareText(puzzleNum, solved, total) {
         const pub = (window.APP_CONFIG && window.APP_CONFIG.publicUrl) || 'make24.app';
-        let text = `\uD83E\uDDE0 Make24 Hard Mode\n\n`;
+        let text = `\uD83D\uDD25 Hot Hand \u00B7 Make24\n\n`;
         text += solved === total
-            ? `\uD83C\uDF0A Perfect! All ${total} targets solved\n`
-            : `\uD83C\uDF0A Filled ${solved}/${total} targets\n`;
+            ? `Perfect run! All ${total} targets solved\n`
+            : `Solved ${solved}/${total} targets\n`;
 
         if (ENABLE_COMPARISON_LINE) {
             const pData = getHardModePercentile();
@@ -595,15 +602,26 @@
             el.classList.add('spk-overlay-center');
             el.innerHTML = `
 <div class="spk-intro-card">
-  <div class="spk-intro-icon">\uD83C\uDF78</div>
-  <div class="spk-intro-title">Hard Mode</div>
-  <div class="spk-intro-body">Make every number from 1\u2013${ORDER_MAX}, one at a time. ${SECONDS_PER_TARGET}s per target.</div>
-  <div class="spk-intro-tag">${totalTargets} targets today</div>
-  <button class="spk-btn spk-btn-primary spk-intro-start">Let's go</button>
+  <div class="spk-intro-icon">\uD83D\uDD25</div>
+  <div class="spk-intro-title">Hot Hand</div>
+  <div class="spk-intro-body">Solve fast. Keep the run alive.</div>
+  <div class="spk-intro-tag">${totalTargets} targets &middot; ${SECONDS_PER_TARGET}s each</div>
+  <button class="spk-btn spk-btn-primary spk-intro-start">Play Hot Hand</button>
+  <button class="spk-btn spk-btn-ghost spk-intro-howto">How it works</button>
+  <div class="spk-intro-rules">
+    Use today\u2019s 4 numbers to make each target, one at a time.
+    Timer runs out \u2192 that target is skipped.
+    Hit every target for a perfect run.
+  </div>
 </div>`;
             el.querySelector('.spk-intro-start').addEventListener('click', () => {
                 localStorage.setItem(INTRO_KEY, '1');
                 onStart();
+            });
+            el.querySelector('.spk-intro-howto').addEventListener('click', () => {
+                const rules  = el.querySelector('.spk-intro-rules');
+                const open   = rules.classList.toggle('spk-intro-rules-open');
+                el.querySelector('.spk-intro-howto').textContent = open ? 'Got it' : 'How it works';
             });
         });
     }
@@ -763,16 +781,16 @@
     // ============================================================
     // END SCREEN
     // ============================================================
-    function _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum) {
+    function _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum, totalTimeSec, onPlayAgain) {
         const total     = targetsList.length;
         const solved    = solvedSet.size;
         const isPerfect = solved === total;
 
         // Title classification
         let heading, headingClass;
-        if (isPerfect)      { heading = 'Perfect';    headingClass = 'spk-heading-perfect'; }
-        else if (solved > 0) { heading = 'Time\u2019s up'; headingClass = 'spk-heading-partial'; }
-        else                 { heading = 'Time\u2019s up'; headingClass = 'spk-heading-none'; }
+        if (isPerfect)       { heading = 'Perfect Run';   headingClass = 'spk-heading-perfect'; }
+        else if (solved > 0) { heading = 'Time\u2019s Up'; headingClass = 'spk-heading-partial'; }
+        else                 { heading = 'Timed Out';      headingClass = 'spk-heading-none'; }
 
         const chipsHTML = targetsList.map(n => {
             if (solvedSet.has(n)) {
@@ -784,12 +802,16 @@
                          title="${hasSol ? 'Tap to see solution' : ''}">${n}</span>`;
         }).join('');
 
-        // Streak from main game state
-        const streak = (window.gameState && window.gameState.streak) || 0;
+        const streak  = (window.gameState && window.gameState.streak) || 0;
         const dateStr = (typeof formatPuzzleDateLong === 'function') ? formatPuzzleDateLong(puzzleNum) : '';
+        const timeStr = (totalTimeSec && totalTimeSec > 0) ? formatRunTime(totalTimeSec) : null;
+
+        // First missed target that has a stored solution (for the shortcut button)
+        const firstMissedWithSol = targetsList.find(n => !solvedSet.has(n) && solutionsByTarget.has(n));
 
         screen.innerHTML = `
 <div class="spk-result${isPerfect ? ' spk-result-perfect' : ''}">
+  <div class="spk-result-mode-label">Hot Hand</div>
   <div class="spk-result-badge ${headingClass}">${heading}</div>
   ${dateStr ? `<div class="spk-result-date">${dateStr}</div>` : ''}
   <div class="spk-result-stats-row">
@@ -801,12 +823,19 @@
       <span class="spk-result-stat-value">${streak}</span>
       <span class="spk-result-stat-label">streak</span>
     </div>` : ''}
+    ${timeStr ? `<div class="spk-result-stat-item">
+      <span class="spk-result-stat-value">${timeStr}</span>
+      <span class="spk-result-stat-label">time</span>
+    </div>` : ''}
   </div>
-  ${!isPerfect && solved > 0 ? '<div class="spk-result-hint">Tap a missed number to see its solution.</div>' : ''}
   <div class="spk-result-book" id="spkResultBook">${chipsHTML}</div>
+  ${firstMissedWithSol != null ? `
+  <div class="spk-result-hint">Tap a missed number to see its solution</div>
+  <button class="spk-btn spk-btn-ghost spk-btn-sm" id="spkSeeSolBtn">See a solution</button>` : ''}
   <div class="spk-result-actions">
-    <button class="spk-btn spk-btn-primary" id="spkBackBtn">Close</button>
+    <button class="spk-btn spk-btn-primary" id="spkPlayAgainBtn">Play Again</button>
     <button class="spk-btn spk-btn-share"   id="spkShareBtn">Share</button>
+    <button class="spk-btn spk-btn-ghost"   id="spkBackBtn">Close</button>
   </div>
 </div>`;
 
@@ -819,6 +848,15 @@
             if (tree) showSolutionModal(screen, n, tree, digits);
         });
 
+        // "See a solution" shortcut — opens solution modal for the first missed target
+        const seeSolBtn = screen.querySelector('#spkSeeSolBtn');
+        if (seeSolBtn && firstMissedWithSol != null) {
+            seeSolBtn.addEventListener('click', () => {
+                const tree = solutionsByTarget.get(firstMissedWithSol);
+                if (tree) showSolutionModal(screen, firstMissedWithSol, tree, digits);
+            });
+        }
+
         screen.querySelector('#spkShareBtn').addEventListener('click', () => {
             shareText(buildHardModeShareText(puzzleNum, solved, total));
             if (typeof gtag !== 'undefined') {
@@ -829,6 +867,9 @@
                     targets_total: total
                 });
             }
+        });
+        screen.querySelector('#spkPlayAgainBtn').addEventListener('click', () => {
+            if (onPlayAgain) onPlayAgain();
         });
         screen.querySelector('#spkBackBtn').addEventListener('click', hideOverlay);
     }
@@ -879,10 +920,15 @@
             // All done already (edge case from resume)
             finished = true;
             clearGameState();
+            const resumeTimeSec = Math.round(totalElapsedBefore / 1000);
+            const onPlayAgainResume = () => {
+                hideOverlay();
+                setTimeout(() => startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, null), 60);
+            };
             showOverlay((el) => {
                 el.innerHTML = '<div class="spk-game-screen"></div>';
                 const screen = el.querySelector('.spk-game-screen');
-                _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
+                _showEndScreen(screen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum, resumeTimeSec, onPlayAgainResume);
             });
             return;
         }
@@ -895,8 +941,8 @@
             el.innerHTML = `
 <div class="spk-game-screen">
   <div class="spk-topbar">
-    <button class="spk-back-btn" aria-label="Exit Hard Mode">&#8249;</button>
-    <span class="spk-badge">HARD MODE</span>
+    <button class="spk-back-btn" aria-label="Exit Hot Hand">&#8249;</button>
+    <span class="spk-badge spk-badge-hothand">HOT HAND</span>
     <div class="spk-topbar-right">
       <span class="spk-stars" id="spkStars">${starsStr}</span>
       <span class="spk-topbar-progress" id="spkProgress">${solvedSet.size}/${totalTargets}</span>
@@ -1018,13 +1064,19 @@
                     });
                 }
 
+                // "Play Again" re-starts a fresh run on the same puzzle
+                const onPlayAgain = () => {
+                    hideOverlay();
+                    setTimeout(() => startSequenceRun(digits, targetsList, solutionsByTarget, difficultyCounts, puzzleNum, null), 60);
+                };
+
                 if (solvedSet.size === totalTargets) {
                     _launchConfetti();
                     setTimeout(() => {
-                        _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
+                        _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum, totalTimeSec, onPlayAgain);
                     }, 1200);
                 } else {
-                    _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum);
+                    _showEndScreen(gameScreen, targetsList, solvedSet, solutionsByTarget, digits, puzzleNum, totalTimeSec, onPlayAgain);
                 }
             }
 
@@ -1673,7 +1725,7 @@
     // KEY INJECTION + "HARD MODE" BUTTON
     // ============================================================
 
-    // "🔑 Hard Mode" button injected into victory actions
+    // "🔑 Hot Hand" button injected into victory actions
     function injectTrySpeakeasyButton() {
         if (!isTodaySolved()) return;
         const actionsEl = document.querySelector('.victory-actions');
@@ -1689,7 +1741,7 @@
         icon.setAttribute('aria-hidden', 'true');
         btn.appendChild(icon);
         const label = document.createElement('span');
-        label.textContent = 'Hard Mode';
+        label.textContent = 'Hot Hand';
         btn.appendChild(label);
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1708,8 +1760,8 @@
         const btn = document.createElement('button');
         btn.id        = 'spkTopbarKeyBtn';
         btn.className = 'spk-key-topbar';
-        btn.setAttribute('aria-label', 'Hard Mode');
-        btn.setAttribute('title', 'Hard Mode');
+        btn.setAttribute('aria-label', 'Hot Hand');
+        btn.setAttribute('title', 'Hot Hand');
         btn.textContent = '\uD83D\uDD11';
         btn.addEventListener('click', launchAfterHours);
         streakEl.insertAdjacentElement('afterend', btn);

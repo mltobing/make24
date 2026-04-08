@@ -85,7 +85,7 @@
     color: #94a3b8;
 }
 
-/* SPEAKEASY badge */
+/* SPEAKEASY badge (base — amber/gold) */
 .spk-badge {
     font-family: 'Space Mono', monospace;
     font-size: 0.625rem;
@@ -97,6 +97,11 @@
     border: 1px solid rgba(251, 191, 36, 0.35);
     border-radius: 6px;
     line-height: 1;
+}
+/* HOT HAND variant — orange/fire instead of amber */
+.spk-badge.spk-badge-hothand {
+    color: #f97316;
+    border-color: rgba(249, 115, 22, 0.35);
 }
 
 /* Difficulty stars in topbar */
@@ -361,6 +366,17 @@
     overflow-y: auto;
     animation: spk-fade-in 0.3s ease-out;
 }
+/* Mode label above result badge ("Hot Hand") */
+.spk-result-mode-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #f97316;
+    opacity: 0.75;
+}
+
 /* Badge / heading classification */
 .spk-result-badge {
     font-size: 1rem;
@@ -441,6 +457,13 @@
     cursor: pointer;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
+.spk-chip-tappable::after {
+    content: '?';
+    margin-left: 3px;
+    opacity: 0.45;
+    font-size: 0.5rem;
+    vertical-align: middle;
+}
 .spk-chip-tappable:hover {
     border-color: #64748b;
     color: #94a3b8;
@@ -472,6 +495,8 @@
 .spk-btn-share:hover { background: #0c3a4a; }
 .spk-btn-ghost   { background: none; color: #94a3b8; border: 1px solid #334155; }
 .spk-btn-ghost:hover { color: #f1f5f9; border-color: #64748b; }
+/* Small button variant used for secondary affordances (e.g. "See a solution") */
+.spk-btn-sm { font-size: 0.75rem; padding: 7px 16px; }
 
 /* ---------------------------------------------------------------
    PERFECT COMPLETION  (.spk-result.spk-result-perfect)
@@ -532,6 +557,21 @@
 .spk-intro-tag   { font-size: 0.8125rem; color: #22d3ee; font-weight: 500; margin-bottom: 24px; }
 .spk-intro-start,
 .spk-intro-close { width: auto; padding: 12px 36px; display: inline-block; }
+.spk-intro-howto { margin-top: 10px; font-size: 0.8125rem; }
+/* Inline rules revealed when "How it works" is tapped */
+.spk-intro-rules {
+    display: none;
+    font-size: 0.8125rem;
+    color: #64748b;
+    line-height: 1.6;
+    text-align: left;
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+}
+.spk-intro-rules.spk-intro-rules-open { display: block; }
 
 /* ---------------------------------------------------------------
    SOLUTION MODAL  (tapped from end screen, layered above game screen)
