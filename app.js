@@ -166,6 +166,10 @@ async function trackAppEvent(eventName, props = {}) {
 // ============================================================
 const STORAGE_KEY = 'make24_v5';
 const ONBOARDING_COMPLETE_KEY = 'make24_onboarding_complete';
+const ONBOARDING_SKIPPED_KEY  = 'make24_onboarding_skipped';
+const TUTORIAL_DONE_KEY       = 'make24_tutorial_done';
+const SOLVED_KEY              = 'make24_has_solved';
+const INTERACTED_KEY          = 'make24_has_interacted';
 const ARCHIVE_PAGE_SIZE = 30;
 const STREAK_FREEZE_INTERVAL = 7;
 const PERFECT_MOVES = 3;
@@ -1539,7 +1543,12 @@ function incrementStreak() {
 function updateStreakDisplay() {
     document.getElementById('streakCount').textContent = gameState.streak;
     const freezeEl = document.getElementById('freezeIndicator');
-    freezeEl.textContent = gameState.freezes > 0 ? '\u2744\uFE0F'.repeat(Math.min(gameState.freezes, 3)) : '';
+    // Hide freeze snowflakes until the player has their first solve — reduces
+    // top-bar clutter for first-time users who don't yet have any freezes anyway.
+    const showFreezes = hasSolvedAtLeastOnePuzzle();
+    freezeEl.textContent = (showFreezes && gameState.freezes > 0)
+        ? '\u2744\uFE0F'.repeat(Math.min(gameState.freezes, 3))
+        : '';
 }
 
 function canUpgradeResult(puzzleNum) {
@@ -1843,6 +1852,12 @@ function selectCard(index) {
         if (!tutorialCheckAction('selectCard', { value: cardValue })) return;
     }
 
+    // First real-game interaction (not tutorial) — record for instruction-line gate
+    if (!tutorialActive && localStorage.getItem(INTERACTED_KEY) !== '1') {
+        localStorage.setItem(INTERACTED_KEY, '1');
+        updateInstructionLineVisibility();
+    }
+
     const pos = playState.selected.indexOf(index);
     if (pos !== -1) {
         playState.selected.splice(pos, 1);
@@ -2045,6 +2060,10 @@ async function handleWin() {
     }
 
     saveState();
+    // Mark progression flags that gate early-user UI
+    localStorage.setItem(SOLVED_KEY, '1');
+    updateInstructionLineVisibility();
+
     updateMoveDots();
     showConfetti();
 
@@ -3464,6 +3483,41 @@ function markOnboardingComplete() {
     localStorage.setItem(ONBOARDING_COMPLETE_KEY, '1');
 }
 
+// ── Progression state helpers ────────────────────────────────────────────────
+
+/**
+ * Returns true once the player has completed at least one puzzle (daily or
+ * archive). The flag is written on first solve and backfilled from history
+ * for users who played before this flag was introduced.
+ */
+function hasSolvedAtLeastOnePuzzle() {
+    if (localStorage.getItem(SOLVED_KEY) === '1') return true;
+    const hasSolved = Object.values(gameState.history).some(h => h?.completed);
+    if (hasSolved) localStorage.setItem(SOLVED_KEY, '1');
+    return hasSolved;
+}
+
+/**
+ * Show the instruction microcopy only to players who haven't yet demonstrated
+ * they understand the game:
+ *   – hide after first solve
+ *   – hide after tutorial completion (walked through fully)
+ *   – hide after skipping onboarding AND making at least one real-game move
+ */
+function shouldShowInstructionLine() {
+    if (hasSolvedAtLeastOnePuzzle()) return false;
+    if (localStorage.getItem(TUTORIAL_DONE_KEY) === '1') return false;
+    if (localStorage.getItem(ONBOARDING_SKIPPED_KEY) === '1' &&
+        localStorage.getItem(INTERACTED_KEY) === '1') return false;
+    return true;
+}
+
+function updateInstructionLineVisibility() {
+    const el = document.getElementById('objectiveCopy');
+    if (!el) return;
+    el.classList.toggle('hidden', !shouldShowInstructionLine());
+}
+
 function showOnboardingCoachmark() {
     const coachmark = document.getElementById('onboardingCoachmark');
     if (!coachmark) return;
@@ -3479,14 +3533,11 @@ function hideOnboardingCoachmark() {
 }
 
 function showTutorialHelpBtn() {
-    const btn = document.getElementById('tutorialHelpBtn');
-    btn.classList.add('visible');
-    if (shouldAutoStartOnboarding()) btn.classList.add('discoverable');
-    else btn.classList.remove('discoverable');
+    // ? help button removed from header; help is accessible via the overflow menu.
 }
 
 function hideTutorialHelpBtn() {
-    document.getElementById('tutorialHelpBtn').classList.remove('discoverable');
+    // ? help button removed from header; no-op.
 }
 
 function startTutorial() {
@@ -3494,8 +3545,7 @@ function startTutorial() {
     tutorialActive = true;
     tutorialStep = 0;
 
-    // Hide the ? icon and any active victory card
-    document.getElementById('tutorialHelpBtn').classList.remove('visible');
+    // Hide any active victory card
     hideVictoryCard();
     clearWinState();
 
@@ -3604,6 +3654,7 @@ function endTutorial() {
     tutorialActive = false;
     tutorialStep = 0;
     markOnboardingComplete();
+    localStorage.setItem(TUTORIAL_DONE_KEY, '1');
     showTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
@@ -3611,25 +3662,27 @@ function endTutorial() {
 
     // Load today's real puzzle
     initPuzzle(getTodayPuzzleNumber(), false);
+    updateInstructionLineVisibility();
 }
 
 function skipTutorial() {
     tutorialActive = false;
     markOnboardingComplete();
+    localStorage.setItem(ONBOARDING_SKIPPED_KEY, '1');
     showTutorialHelpBtn();
     document.getElementById('tutorialBanner').classList.remove('visible');
     document.getElementById('tutorialTooltip').classList.remove('visible');
     clearTutorialHighlights();
     initPuzzle(getTodayPuzzleNumber(), false);
+    updateInstructionLineVisibility();
 }
 
 // Wire tutorial buttons
 document.getElementById('tutorialSkip').addEventListener('click', skipTutorial);
-document.getElementById('tutorialHelpBtn').addEventListener('click', () => {
-    startTutorial();
-});
+// tutorialHelpBtn removed from header — tutorial is now only accessible via the overflow menu
 document.getElementById('onboardingSkip').addEventListener('click', () => {
     markOnboardingComplete();
+    localStorage.setItem(ONBOARDING_SKIPPED_KEY, '1');
     hideOnboardingCoachmark();
     showTutorialHelpBtn();
 });
@@ -3683,6 +3736,7 @@ async function boot() {
 
     if (shouldShowTutorialHint()) showTutorialHelpBtn();
     if (shouldAutoStartOnboarding()) showOnboardingCoachmark();
+    updateInstructionLineVisibility();
 
     // Allow onAuthStateChange to handle subsequent auth events (sign-in/out)
     bootComplete = true;
